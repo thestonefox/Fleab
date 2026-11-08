@@ -63,10 +63,13 @@ runner labelled `unity`, with `UNITY_EDITOR_PATH` set to its installed Editor.
 actual player builds with `-BuildPlayers`; the required modules must be present.
 Dedicated Server smoke builds require separately installed Server modules.
 
-Set the workspace and UPM versions together, then tag `vX.Y.Z`. `release.yml`
-checks version consistency, tests/builds all six targets, packages native
-artifacts and publishes only after every build succeeds. The owner name is
-intentionally unspecified. GitHub releases/tags are not created by local builds.
+Set the initial workspace/UPM versions together and push the initial `vX.Y.Z`
+tag. Thereafter `semver.yml` allocates a tag for each merged PR from its original
+Conventional Commits. Breaking changes bump major, `feat` bumps minor, and other
+changes bump patch. Versioned release snapshots leave protected main untouched.
+`release.yml` checks consistency, tests/builds all six targets and publishes
+after every build and asset upload succeeds. See `releases.md` for details.
+The owner remains unspecified. Local builds do not push tags or releases.
 
 `tools/package-release.py` copies the executable, documentation and dependency
 license texts to `dist/`, then writes a ZIP or tarball plus SHA-256. macOS

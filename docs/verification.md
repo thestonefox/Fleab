@@ -60,6 +60,17 @@ is ready at `unity-package/`; Windows build/package artifacts are generated in
 `target/release/` and `dist/`. Local toolchains, isolated Unity projects, raw
 test logs and disposable Sandbox output remain ignored under `.tools/`.
 
+The subsequent merged-PR SemVer automation is covered separately by
+19 passing tests in `tests/release/`: bump precedence, breaking syntax, grouped/escaped notes,
+pagination beyond 250 PR commits, exact Git snapshots, unchanged main/index,
+version/lock synchronisation, atomic tag pushes, queued-merge catch-up and
+idempotent retry. These local tests use no live GitHub writes. The first hosted
+release must verify repository token/tag permissions and native runners. The
+workflow definitions also pass actionlint. A disposable clone of the actual
+project was stamped as 0.2.0; `cargo metadata --locked` confirmed that the Rust
+manifest, lockfile and Unity package agree without modifying main. Release
+rules and notes use locked official semantic-release plugins.
+
 ## Known operational limits
 
 Process visibility is OS-dependent, especially under Wine/Proton wrappers;

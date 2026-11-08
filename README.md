@@ -122,6 +122,13 @@ page. Release automation produces Windows x64/ARM64 ZIPs, Linux x64/ARM64
 tarballs and macOS Intel/Apple Silicon `.app` tarballs, with SHA-256 files.
 No releases have been uploaded by this local implementation task.
 
+After the initial `v0.1.0` tag is pushed, merging a PR into `main` automatically
+tags and releases the next version. Any breaking commit bumps major, otherwise
+any `feat` bumps minor, and all other PRs bump patch. Original PR commits drive
+the decision even for squash merges. Release notes group commit subjects by
+type and scope. See [automatic releases](docs/releases.md) for syntax, version
+snapshots, permissions and recovery.
+
 Windows links the C/C++ runtime statically. Linux needs a desktop session,
 OpenGL/EGL, X11 or Wayland, and the usual system libraries described in
 [Deployer](docs/deployer.md). macOS artifacts are ad-hoc signed for integrity;
