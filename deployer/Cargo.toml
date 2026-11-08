@@ -3,7 +3,7 @@ name = "fleab"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Build it. Hop it. Play it. Portable Unity build deployer."
+description = "Portable desktop app for deploying and launching Unity builds."
 
 [dependencies]
 anyhow = "1"
