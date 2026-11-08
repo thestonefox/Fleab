@@ -1,7 +1,13 @@
 # Fleab Publisher
 
-Install `com.fleab.publisher` through UPM from the repository's
-`unity-package/` path, optionally pinned to `#v0.1.0`. Unity 6.6 is the primary
+Install `com.fleab.publisher` in Unity Package Manager using this Git URL:
+
+```text
+https://github.com/thestonefox/Fleab.git?path=/unity-package#v0.1.0
+```
+
+For a local checkout, use **Install package from disk** and select
+`unity-package/package.json`. Unity 6.6 is the primary
 target. Other Unity 6 versions are best effort; only the tested version is
 listed in the verification record.
 

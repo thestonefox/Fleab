@@ -1,7 +1,8 @@
 # Wine, Proton and Steam Deck
 
 Configure a Windows client/server destination on Linux, deploy a Windows
-archive, then select a runner under Settings > Windows builds on Linux.
+archive, then select a runner under **Settings > Launch options > Windows builds
+on Linux > Compatibility settings**.
 Deployment needs neither Steam nor Wine. Launch needs a working runner and
 its system/runtime dependencies.
 

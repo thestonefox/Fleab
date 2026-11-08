@@ -27,6 +27,8 @@ content; the OS draws the native title bar separately.
 
 ## Deployment
 
+For shared-folder examples and profile setup, see [folders and profiles](profiles.md).
+
 The portable native egui/eframe application uses filesystem paths only.
 Create profiles in Settings. There are six optional destinations, one for
 each OS/client-server target. A blank destination disables that target's builds
