@@ -28,7 +28,7 @@ namespace Fleab.Publisher
                 string name = string.IsNullOrWhiteSpace(settings.buildNameOverride) ? PlayerSettings.productName : settings.buildNameOverride;
                 var files = Array.ConvertAll(report.GetFiles(), f => f.path);
                 var record = BuildRecord.Discover(report.summary.outputPath, files, name, PlayerSettings.bundleVersion,
-                    BuildArchitecture.Detect(report.summary.outputPath, os), report.summary.subtarget == (int)StandaloneBuildSubtarget.Server, DateTime.UtcNow);
+                    BuildArchitecture.Detect(report.summary.outputPath, os), report.summary.GetSubtarget<StandaloneBuildSubtarget>() == StandaloneBuildSubtarget.Server, DateTime.UtcNow);
                 PublisherController.Remember(record);
                 if (settings.automaticPublishing) EditorApplication.delayCall += () => PublisherController.Start(record);
             }
@@ -80,7 +80,7 @@ namespace Fleab.Publisher
         }
         static void Poll()
         {
-            lock (Gate) EditorUtility.DisplayProgressBar("Fleab Publisher", phase, fraction);
+            if (!Application.isBatchMode) { lock (Gate) EditorUtility.DisplayProgressBar("Fleab Publisher", phase, fraction); }
             if (!task.IsCompleted) return;
             try
             {
@@ -91,7 +91,7 @@ namespace Fleab.Publisher
             catch (Exception error)
             {
                 Debug.LogError("Fleab publishing failed. Unity output preserved. Retry with Tools > Fleab > Retry Publish.\n" + error);
-                EditorUtility.DisplayDialog("Fleab publishing failed", error.Message + "\n\nOriginal build preserved. Use Tools > Fleab > Retry Publish.", "OK");
+                if (!Application.isBatchMode) EditorUtility.DisplayDialog("Fleab publishing failed", error.Message + "\n\nOriginal build preserved. Use Tools > Fleab > Retry Publish.", "OK");
             }
             finally { task = null; EditorUtility.ClearProgressBar(); EditorApplication.update -= Poll; EditorApplication.UnlockReloadAssemblies(); }
         }
