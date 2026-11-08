@@ -59,7 +59,7 @@ jobs:
           python -m unittest discover -s tests/release -v
       - name: Package portable application
         run: python tools/package-release.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Fleab-${{ matrix.platform }}-${{ matrix.arch }}
           path: |

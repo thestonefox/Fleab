@@ -20,7 +20,7 @@ jobs:
       - name: Compile and test the package with real Windows builds
         shell: pwsh
         run: ./tools/test-unity.ps1 -UnityEditor "$env:UNITY_EDITOR_PATH" -BuildPlayers -BuildTarget '${{ inputs.build_target }}'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: unity-test-results
