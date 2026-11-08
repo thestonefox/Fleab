@@ -2,8 +2,19 @@ name: Release portable Fleab
 on:
   push:
     tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        description: Immutable stable tag to build and publish
+        type: string
+        required: true
 permissions:
   contents: read
+concurrency:
+  group: fleab-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 jobs:
   build:
     strategy:
@@ -19,6 +30,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - name: Linux build libraries
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev pkg-config
@@ -32,13 +45,13 @@ jobs:
           import json, os, pathlib, tomllib
           rust = tomllib.loads(pathlib.Path('Cargo.toml').read_text())['workspace']['package']['version']
           unity = json.loads(pathlib.Path('unity-package/package.json').read_text())['version']
-          assert os.environ['GITHUB_REF_NAME'] == f'v{rust}' and rust == unity
+          assert os.environ['RELEASE_TAG'] == f'v{rust}' and rust == unity
       - run: cargo test --locked --workspace
       - run: cargo build --locked --release
       - run: python tools/package-release.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          name: release-${{ env.RELEASE_TAG }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             dist/*.zip
             dist/*.tar.gz
@@ -50,12 +63,36 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v4
         with:
+          pattern: release-${{ env.RELEASE_TAG }}-*
           path: release
           merge-multiple: true
       - name: Create release with portable artifacts
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft > release-state.json 2> release-state.err; then
+            if python -c 'import json; raise SystemExit(0 if json.load(open("release-state.json"))["isDraft"] else 1)'; then
+              gh release upload "$RELEASE_TAG" release/* --clobber
+            else
+              echo "Release $RELEASE_TAG is already published; keeping its assets."
+              exit 0
+            fi
+          else
+            # Do not mistake authentication/network errors for a missing release.
+            gh api "repos/$GH_REPO/releases?per_page=1" > /dev/null
+            if [ -f .github/release-notes.md ]; then
+              gh release create "$RELEASE_TAG" release/* --draft --verify-tag --notes-file .github/release-notes.md
+            else
+              gh release create "$RELEASE_TAG" release/* --draft --verify-tag --generate-notes
+            fi
+          fi
+          release_id=$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)
+          gh api --method PATCH "repos/$GH_REPO/releases/$release_id" -F draft=false -f make_latest=legacy > /dev/null

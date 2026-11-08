@@ -7,6 +7,7 @@
 !tests/**/*.csproj
 !tools/**/*.csproj
 **/__pycache__/
+/tools/release-engine/node_modules/
 #
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore
 #

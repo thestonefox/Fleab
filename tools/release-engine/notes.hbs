@@ -1,0 +1,15 @@
+# Fleab {{currentTag}}
+
+{{previousTag}} → {{currentTag}} ({{bump}} release)
+
+PR [#{{pr.number}}]({{{pr.url}}}): {{{pr.title}}}
+
+{{#each commitGroups}}
+- **{{{title}}}**
+{{#each scopes}}
+  - **{{{scope}}}**
+{{#each commits}}
+    - {{{subject}}}{{#if breaking}} **BREAKING CHANGE**{{/if}} ([`{{shortHash}}`]({{@root.host}}/{{@root.owner}}/{{@root.repository}}/commit/{{hash}}))
+{{/each}}
+{{/each}}
+{{/each}}

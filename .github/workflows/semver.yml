@@ -1,0 +1,70 @@
+name: Release merged pull requests
+on:
+  pull_request_target:
+    branches: [main]
+    types: [closed]
+  workflow_dispatch:
+permissions:
+  contents: read
+# Serialise version allocation and drain all unprocessed merged PRs. GitHub
+# can replace pending concurrency runs, so processing just the event PR would
+# lose releases when multiple PRs merge while a build is running.
+concurrency:
+  group: fleab-semver-releases
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      releases: ${{ steps.prepare.outputs.releases }}
+      more: ${{ steps.prepare.outputs.more }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install locked semantic-release plugins
+        run: npm ci --prefix tools/release-engine --ignore-scripts --omit=peer
+      - name: Test release rules before allocating versions
+        run: python -m unittest discover -s tests/release -v
+      - name: Prepare immutable release tags from merged PRs
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/prepare-release.py
+  release:
+    needs: prepare
+    if: needs.prepare.outputs.releases != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.releases) }}
+    permissions:
+      contents: write
+    # GITHUB_TOKEN tag pushes cannot trigger another push workflow. Call the
+    # same reusable build workflow explicitly without requiring a PAT.
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ matrix.tag }}
+  continue:
+    needs: [prepare, release]
+    if: always() && !cancelled() && needs.prepare.outputs.more == 'true' && needs.release.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Continue a large successful release backlog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run semver.yml --ref main

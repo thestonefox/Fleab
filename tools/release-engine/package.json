@@ -1,0 +1,12 @@
+{
+  "name": "fleab-release-engine",
+  "private": true,
+  "type": "module",
+  "description": "Semantic-release plugins for Fleab's merged-PR adapter",
+  "dependencies": {
+    "@semantic-release/commit-analyzer": "13.0.1",
+    "@semantic-release/release-notes-generator": "14.1.1",
+    "conventional-changelog-conventionalcommits": "10.4.1",
+    "semver": "7.8.6"
+  }
+}
