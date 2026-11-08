@@ -1,5 +1,32 @@
 # Fleab desktop application
 
+## Appearance
+
+The native title bar shows Fleab and the release version. The interface follows
+the system light/dark preference at startup and when the desktop reports a theme
+change. Linux reads and watches the standard XDG desktop portal appearance
+setting, including on X11. If no desktop preference is available, it uses light
+mode. Both palettes use the same spacing, controls and readable contrast.
+Windows uses an installed Segoe UI font; macOS and Linux use an available system
+font, with bundled egui fonts as a fallback. No platform font is redistributed.
+
+The layout follows Microsoft's [Windows typography](https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/typography),
+[color](https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/color)
+and [geometry](https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/geometry)
+guidance. Controls are rendered by egui; they are not WinUI or AppKit widgets.
+The settings cog, refresh, folder and back buttons have descriptive tooltips and
+accessibility labels. Settings has separate folder and launch tabs, a scrolling
+form and a fixed save/cancel footer. Published build labels show decoded version,
+target and UTC time; the original archive name is available on hover.
+
+Windows Sandbox captures with a sample game profile:
+[light app](screenshots/fleab-light.png), [dark app](screenshots/fleab-dark.png),
+[light settings](screenshots/settings-light.png),
+[dark settings](screenshots/settings-dark.png). These show the rendered window
+content; the OS draws the native title bar separately.
+
+## Deployment
+
 The portable native egui/eframe application uses filesystem paths only.
 Create profiles in Settings. There are six optional destinations, one for
 each OS/client-server target. A blank destination disables that target's builds
