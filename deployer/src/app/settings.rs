@@ -1,5 +1,12 @@
+use super::icons::Icon;
 use super::*;
 use crate::profiles::RunnerKind;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Folders,
+    Launch,
+}
 
 pub(super) struct Editor {
     profile: Profile,
@@ -7,6 +14,7 @@ pub(super) struct Editor {
     game_args: String,
     runner_args: String,
     error: String,
+    tab: Tab,
 }
 
 impl Editor {
@@ -17,23 +25,45 @@ impl Editor {
             profile,
             existing,
             error: String::new(),
+            tab: Tab::Folders,
         }
     }
 }
+
+fn field(ui: &mut egui::Ui, label: &str, value: &mut String, hint: &str) {
+    ui.label(label);
+    ui.add(
+        egui::TextEdit::singleline(value)
+            .margin(egui::Margin::symmetric(10, 8))
+            .desired_width(f32::INFINITY)
+            .hint_text(hint),
+    );
+}
+
 fn folder(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.label(label);
     ui.horizontal(|ui| {
+        // TextEdit's desired width excludes its 20px horizontal padding.
+        let width = (ui.available_width() - 64.0).max(60.0);
         ui.add(
             egui::TextEdit::singleline(value)
-                .desired_width((ui.available_width() - 95.0).max(100.0)),
+                .margin(egui::Margin::symmetric(10, 8))
+                .desired_width(width)
+                .hint_text("Not configured"),
         );
-        if ui.button("Browse…").clicked()
+        if icons::button(ui, Icon::Folder, &format!("Choose {label}"), true).clicked()
             && let Some(path) = rfd::FileDialog::new().set_title(label).pick_folder()
         {
             *value = path.to_string_lossy().into();
         }
     });
 }
+
+fn section(ui: &mut egui::Ui, title: &str) {
+    ui.label(RichText::new(title).size(16.0).strong());
+    ui.add_space(4.0);
+}
+
 impl FleabApp {
     pub(super) fn settings(&mut self, ctx: &egui::Context) {
         let Some(mut editor) = self.editor.take() else {
@@ -41,65 +71,175 @@ impl FleabApp {
         };
         let mut open = true;
         let mut action = None;
-        let size = egui::vec2(
-            (ctx.content_rect().width() - 28.0).min(620.0),
-            ctx.content_rect().height() - 36.0,
-        );
-        egui::Window::new("Profiles and launch settings").open(&mut open).fixed_size(size).constrain_to(ctx.content_rect()).resizable(false).collapsible(false).show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button("New profile").clicked() { action = Some("new"); }
-                if ui.button("Import JSON…").clicked() { action = Some("import"); }
-                if ui.button("Export JSON…").clicked() { action = Some("export"); }
-            });
-            egui::ComboBox::from_id_salt("edit-profile").selected_text(&editor.profile.name).show_ui(ui, |ui| {
-                for profile in &self.config.profiles {
-                    if ui.selectable_label(profile.id == editor.profile.id, &profile.name).clicked() { editor = Editor::new(profile.clone(), true); }
-                }
-            });
-            egui::ScrollArea::vertical().max_height((size.y - 190.0).max(100.0)).show(ui, |ui| {
-                ui.label("Profile name"); ui.text_edit_singleline(&mut editor.profile.name);
-                folder(ui, "Archive source directory", &mut editor.profile.source);
-                ui.separator(); ui.small("Configure a destination to show that target's builds. Blank destinations stay disabled.");
-                for target in Target::ALL { folder(ui, target.label(), editor.profile.destinations.entry(target).or_default()); }
-                egui::CollapsingHeader::new("Executable overrides and launch arguments").show(ui, |ui| {
-                    ui.small("Optional paths relative to each deployment directory. Leave empty for automatic detection.");
-                    for target in Target::ALL { ui.label(target.label()); ui.text_edit_singleline(editor.profile.executable_overrides.entry(target).or_default()); }
-                    ui.label("Game/server arguments — one argument per line");
-                    ui.add(egui::TextEdit::multiline(&mut editor.game_args).desired_rows(3).desired_width(f32::INFINITY));
-                    ui.small("Spaces stay inside an argument. Do not add shell quotes.");
+        egui::TopBottomPanel::top("settings-header")
+            .frame(
+                egui::Frame::new()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .inner_margin(egui::Margin::symmetric(24, 16)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if icons::button(ui, Icon::Back, "Back to builds", true).clicked() {
+                        action = Some("cancel");
+                    }
+                    ui.add_space(4.0);
+                    ui.heading("Settings");
                 });
-                egui::CollapsingHeader::new("Windows builds on Linux (Wine / Proton)").show(ui, |ui| {
-                    let label = if editor.profile.launch.runner.is_empty() { "Automatic discovery".into() } else { editor.profile.launch.runner.clone() };
-                    egui::ComboBox::from_id_salt("runner").selected_text(label).show_ui(ui, |ui| {
-                        if ui.selectable_label(editor.profile.launch.runner.is_empty(), "Automatic discovery").clicked() { editor.profile.launch.runner.clear(); editor.profile.launch.runner_kind = RunnerKind::Auto; }
-                        for runner in &self.runners {
-                            if ui.selectable_label(editor.profile.launch.runner == runner.path.to_string_lossy(), &runner.name).clicked() {
-                                editor.profile.launch.runner = runner.path.to_string_lossy().into(); editor.profile.launch.runner_kind = runner.kind; editor.profile.launch.steam_root = runner.steam_root.to_string_lossy().into();
-                            }
+                ui.add_space(4.0);
+                design::caption(ui, "Manage game profiles and deployment folders.");
+            });
+        egui::TopBottomPanel::bottom("settings-actions")
+            .frame(
+                egui::Frame::new()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .inner_margin(egui::Margin::symmetric(24, 16)),
+            )
+            .show(ctx, |ui| {
+                if !editor.error.is_empty() {
+                    egui::ScrollArea::vertical()
+                        .max_height(64.0)
+                        .show(ui, |ui| {
+                            ui.colored_label(ui.visuals().error_fg_color, &editor.error);
+                        });
+                    ui.add_space(8.0);
+                }
+                ui.horizontal(|ui| {
+                    if editor.existing
+                        && ui
+                            .button("Delete profile")
+                            .on_hover_text("Remove this profile; installed files are kept")
+                            .clicked()
+                    {
+                        action = Some("delete");
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if design::primary(ui, "Save profile", true).clicked() {
+                            action = Some("save");
+                        }
+                        if ui.button("Cancel").clicked() {
+                            action = Some("cancel");
                         }
                     });
-                    egui::ComboBox::from_id_salt("runner-kind").selected_text(format!("{:?}", editor.profile.launch.runner_kind)).show_ui(ui, |ui| {
-                        for kind in [RunnerKind::Auto, RunnerKind::Wine, RunnerKind::Proton] { ui.selectable_value(&mut editor.profile.launch.runner_kind, kind, format!("{kind:?}")); }
-                    });
-                    ui.label("Manual runner executable (optional)");
-                    ui.horizontal(|ui| { ui.text_edit_singleline(&mut editor.profile.launch.runner); if ui.button("Browse…").clicked() && let Some(path) = rfd::FileDialog::new().pick_file() { editor.profile.launch.runner = path.to_string_lossy().into(); } });
-                    folder(ui, "Compatibility prefix / Proton data directory (optional)", &mut editor.profile.launch.prefix);
-                    folder(ui, "Steam root directory (needed for manual Proton)", &mut editor.profile.launch.steam_root);
-                    ui.label("Runner argument override — one per line (Proton defaults to run)");
-                    ui.add(egui::TextEdit::multiline(&mut editor.runner_args).desired_rows(2).desired_width(f32::INFINITY));
                 });
             });
-            if !editor.error.is_empty() { ui.colored_label(Color32::LIGHT_RED, &editor.error); }
-            ui.horizontal(|ui| {
-                if ui.button("Save profile").clicked() { action = Some("save"); }
-                if ui.add_enabled(editor.existing, egui::Button::new("Delete profile")).on_hover_text("Removes configuration only; installed files are kept").clicked() { action = Some("delete"); }
-                if ui.button("Cancel").clicked() { action = Some("cancel"); }
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::symmetric(24, 8)))
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().id_salt("settings-scroll").show(ui, |ui| {
+                    ui.set_max_width(ui.available_width().min(860.0));
+                    design::card(ui).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.label("Game profile");
+                        egui::ComboBox::from_id_salt("edit-profile").width(ui.available_width()).truncate()
+                            .selected_text(&editor.profile.name).show_ui(ui, |ui| {
+                                for profile in &self.config.profiles {
+                                    if ui.selectable_label(profile.id == editor.profile.id, &profile.name).clicked() {
+                                        editor = Editor::new(profile.clone(), true);
+                                    }
+                                }
+                            });
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.button("New profile").clicked() { action = Some("new"); }
+                            if ui.button("Import…").on_hover_text("Import a profile from JSON").clicked() { action = Some("import"); }
+                            if ui.button("Export…")
+                                .on_hover_text("Export this profile as JSON").clicked() { action = Some("export"); }
+                        });
+                    });
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut editor.tab, Tab::Folders, "Profile & folders");
+                        ui.selectable_value(&mut editor.tab, Tab::Launch, "Launch options");
+                    });
+                    ui.add_space(8.0);
+                    match editor.tab {
+                        Tab::Folders => {
+                            design::card(ui).show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                section(ui, "Profile");
+                                field(ui, "Name", &mut editor.profile.name, "Name your game");
+                                ui.add_space(8.0);
+                                folder(ui, "Published archives", &mut editor.profile.source);
+                                design::caption(ui, "The local folder or mounted share where Unity publishes builds.");
+                            });
+                            ui.add_space(8.0);
+                            design::card(ui).show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                section(ui, "Client destinations");
+                                design::caption(ui, "Only configured targets appear in your build list.");
+                                for target in [Target::WindowsClient, Target::LinuxClient, Target::MacClient] {
+                                    folder(ui, target.label(), editor.profile.destinations.entry(target).or_default());
+                                }
+                                ui.add_space(8.0);
+                                egui::CollapsingHeader::new("Server destinations").show(ui, |ui| {
+                                    for target in [Target::WindowsServer, Target::LinuxServer, Target::MacServer] {
+                                        folder(ui, target.label(), editor.profile.destinations.entry(target).or_default());
+                                    }
+                                });
+                            });
+                        }
+                        Tab::Launch => {
+                            design::card(ui).show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                section(ui, "Launch arguments");
+                                design::caption(ui, "One argument per line. Spaces stay inside an argument; no shell quotes needed.");
+                                ui.add(egui::TextEdit::multiline(&mut editor.game_args).desired_rows(3)
+                                    .desired_width(f32::INFINITY).hint_text("Optional game or server arguments"));
+                                ui.add_space(8.0);
+                                egui::CollapsingHeader::new("Executable overrides").show(ui, |ui| {
+                                    design::caption(ui, "Leave blank for automatic detection. Paths are relative to the deployment folder.");
+                                    for target in Target::ALL {
+                                        field(ui, target.label(), editor.profile.executable_overrides.entry(target).or_default(), "Automatic detection");
+                                    }
+                                });
+                            });
+                            ui.add_space(8.0);
+                            design::card(ui).show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                section(ui, "Windows builds on Linux");
+                                design::caption(ui, "Use Wine or Proton to launch Windows builds on a Linux computer.");
+                                egui::CollapsingHeader::new("Compatibility settings").show(ui, |ui| {
+                                    let label = if editor.profile.launch.runner.is_empty() { "Automatic discovery".into() }
+                                        else { editor.profile.launch.runner.clone() };
+                                    egui::ComboBox::from_id_salt("runner").width(ui.available_width()).truncate()
+                                        .selected_text(label).show_ui(ui, |ui| {
+                                            if ui.selectable_label(editor.profile.launch.runner.is_empty(), "Automatic discovery").clicked() {
+                                                editor.profile.launch.runner.clear(); editor.profile.launch.runner_kind = RunnerKind::Auto;
+                                            }
+                                            for runner in &self.runners {
+                                                if ui.selectable_label(editor.profile.launch.runner == runner.path.to_string_lossy(), &runner.name).clicked() {
+                                                    editor.profile.launch.runner = runner.path.to_string_lossy().into();
+                                                    editor.profile.launch.runner_kind = runner.kind;
+                                                    editor.profile.launch.steam_root = runner.steam_root.to_string_lossy().into();
+                                                }
+                                            }
+                                        });
+                                    ui.label("Runner type");
+                                    egui::ComboBox::from_id_salt("runner-kind").selected_text(format!("{:?}", editor.profile.launch.runner_kind))
+                                        .show_ui(ui, |ui| { for kind in [RunnerKind::Auto, RunnerKind::Wine, RunnerKind::Proton] {
+                                            ui.selectable_value(&mut editor.profile.launch.runner_kind, kind, format!("{kind:?}"));
+                                        }});
+                                    field(ui, "Runner executable", &mut editor.profile.launch.runner, "Optional Wine or Proton path");
+                                    if ui.button("Choose executable…").clicked()
+                                        && let Some(path) = rfd::FileDialog::new().pick_file() {
+                                        editor.profile.launch.runner = path.to_string_lossy().into();
+                                    }
+                                    folder(ui, "Compatibility prefix / Proton data", &mut editor.profile.launch.prefix);
+                                    folder(ui, "Steam root (for manual Proton)", &mut editor.profile.launch.steam_root);
+                                    ui.label("Runner arguments · one per line");
+                                    ui.add(egui::TextEdit::multiline(&mut editor.runner_args).desired_rows(2)
+                                        .desired_width(f32::INFINITY).hint_text("Proton defaults to run"));
+                                });
+                            });
+                        }
+                    }
+                    ui.add_space(8.0);
+                });
             });
-        });
         editor.profile.launch.game_arguments =
             editor.game_args.lines().map(str::to_owned).collect();
         editor.profile.launch.runner_arguments =
             editor.runner_args.lines().map(str::to_owned).collect();
+
         let result = (|| -> Result<()> {
             match action {
                 Some("cancel") => open = false,
@@ -183,8 +323,12 @@ mod tests {
     }
     #[test]
     fn settings_save_stays_inside_small_windows() {
-        for size in [egui::vec2(700.0, 490.0), egui::vec2(480.0, 390.0)] {
+        for (size, theme) in [egui::vec2(700.0, 490.0), egui::vec2(480.0, 390.0)]
+            .into_iter()
+            .flat_map(|size| [egui::Theme::Light, egui::Theme::Dark].map(|theme| (size, theme)))
+        {
             let ctx = egui::Context::default();
+            design::install(&ctx);
             let mut app = FleabApp {
                 config: Config::default(),
                 config_path: None,
@@ -197,29 +341,41 @@ mod tests {
                 status: String::new(),
                 error: false,
                 worker: None,
-                editor: Some(Editor::new(Profile::default(), false)),
+                editor: Some(Editor::new(Profile::default(), true)),
                 children: Vec::new(),
             };
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
             // egui windows settle their auto-size on a second layout pass.
             let mut bounds = Vec::new();
+            let mut controls = Vec::new();
             for _ in 0..3 {
                 let output = ctx.run(
                     egui::RawInput {
                         screen_rect: Some(screen),
+                        system_theme: Some(theme),
                         ..Default::default()
                     },
                     |ctx| app.settings(ctx),
                 );
                 bounds.clear();
+                controls.clear();
                 for shape in &output.shapes {
                     text_bounds(&shape.shape, &mut bounds);
+                    if let egui::Shape::Rect(rect) = &shape.shape {
+                        controls.push(rect.rect);
+                    }
                 }
             }
             assert!(!bounds.is_empty(), "Save profile must be rendered");
             assert!(
                 bounds.iter().all(|r| screen.contains_rect(*r)),
                 "Save profile outside viewport: {bounds:?}"
+            );
+            assert!(
+                controls
+                    .iter()
+                    .all(|r| r.left() >= -0.5 && r.right() <= screen.right() + 0.5),
+                "Settings controls extend past {screen:?}: {controls:?}"
             );
         }
     }

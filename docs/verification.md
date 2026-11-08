@@ -7,7 +7,7 @@ checks from automation and hardware checks that remain outstanding.
 |---|---|
 | Rust formatting | Passed |
 | Clippy, all targets in this workspace, warnings denied | Passed on Windows x64 and Linux x64 (WSL Ubuntu) |
-| Rust unit/integration suite | 23 passed on Windows; 24 on native Linux x64; 2 real-build tests opt-in |
+| Rust unit/integration suite | 25 passed on Windows; 27 on native Linux x64; 2 real-build tests opt-in |
 | Standalone managed publisher | 27 assertions passed on Windows; 30 on Linux x64 |
 | Unity Editor | Unity 6000.6.8f1; 6 package tests passed |
 | Unity Windows publishing acceptance | 7 tests passed, including two real builds |
@@ -17,8 +17,10 @@ checks from automation and hardware checks that remain outstanding.
 | Rust deployment of real Windows/Linux/macOS archives | Passed; independent destinations and state |
 | Clean Windows Sandbox | Core tests, real native Unity deploy/launch, process protection and GUI startup passed |
 | Native release | Windows x64 release built with static CRT |
-| Small-window settings layout | Offscreen egui tests passed at 700×490 and 480×390 |
-| Workflow files | actionlint passed; first hosted matrix exposed the issues below |
+| Small-window layouts | Build controls fit at 780×660 and 480×390; settings fields/actions fit at 700×490 and 480×390 in both themes |
+| System appearance | Light/dark/light transitions passed; Linux portal input updates and no-preference fallback passed |
+| Redesign screenshots | App and settings captured and inspected in light/dark Windows Sandbox sessions |
+| Workflow files | actionlint passed previously; user reported the corrected six-platform validation passed; redesign awaits fresh CI |
 
 The initial clean-Sandbox test exposed a missing Visual C++ runtime dependency.
 Static CRT linking fixed it. The successful guest had networking and clipboard
@@ -34,15 +36,37 @@ unowned directories, durable interruption recovery, installed-state semantics,
 entry-point ambiguity, executable overrides, binary macOS plists, Wine/Proton
 discovery and argument/environment construction. Native Windows process launch
 and running-process detection are exercised. Unix mode/symlink tests are
-provided for native CI, but were not executed on this Windows host.
+provided for native CI and passed in native Linux filesystems under WSL.
+
+## Desktop appearance redesign
+
+The desktop now follows Fluent layout, typography and color guidance with
+installed system fonts, vector icons, decoded build labels and separate settings
+tabs. App branding appears in the native title bar as `Fleab <version>`; the
+slogan is removed from the desktop and publisher interfaces. The publisher uses
+Unity's own themed controls and a scrolling layout, and its title includes the
+installed package version.
+
+Screenshot previews under `docs/screenshots/` capture the actual app views using
+a disposable GPU capture harness in Windows Sandbox. They contain sample game
+data and exclude native OS window decorations. No host desktop interaction or
+host appearance change was required. The harness uses the production view code
+and forces each palette only for capture. Production follows system appearance.
+Theme-change tests exercise the system-preference path rather than this capture
+override. The Linux portal listener compiles and its input mapping is tested;
+live portal signals on GNOME/KDE/Steam Deck still need a desktop session.
+
+The updated Unity window compiles and the six package editor tests pass in
+hidden batch mode. A visual Unity capture remains unavailable in Sandbox:
+Unity exits before producing its startup log with `0x8007007E` (missing module).
 
 ## Still requires an appropriate environment
 
-* Native Linux ARM64 compilation/runtime, Linux x64 desktop runtime beyond WSL,
-  and macOS Intel/Apple Silicon desktop runtime. Intel CI must be rerun after
-  the metadata correction below; Apple Silicon compiled and packaged in CI.
-* Windows ARM64 compilation/runtime. Local Visual Studio lacks its ARM64 C++
-  compiler; native ARM64 GitHub Actions jobs are configured.
+* Fresh six-platform CI for the desktop redesign. The user reported all prior
+  validation jobs passed after the metadata/Clippy fixes below.
+* Native Linux ARM64, Linux x64 desktop runtime beyond WSL, macOS Intel/Apple
+  Silicon desktop interaction and Windows ARM64 runtime. Local Visual Studio
+  lacks the ARM64 C++ compiler; native ARM64 CI jobs are configured.
 * Steam Deck X11/Wayland, XDG portal pickers, actual Wine and Proton launches,
   Steam Linux Runtime requirements, prefixes and game-specific compatibility.
 * Native macOS publisher modes and framework symlinks on hardware. The Linux
@@ -59,7 +83,7 @@ provided for native CI, but were not executed on this Windows host.
 
 The first hosted CI run passed macOS ARM64. Its Linux jobs failed Clippy and
 macOS Intel failed publisher-archive deployment tests, as described below.
-The full six-platform matrix is not yet reported as passed. No remote tags,
+The user subsequently reported all validation jobs passed. No remote tags,
 releases or uploads were created by these local verification tasks. The Unity package
 is ready at `unity-package/`; Windows build/package artifacts are generated in
 `target/release/` and `dist/`. Local toolchains, isolated Unity projects, raw

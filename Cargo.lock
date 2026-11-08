@@ -947,12 +947,15 @@ name = "fleab"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ashpd",
  "chrono",
  "directories",
  "eframe",
  "fs2",
+ "futures-util",
  "image",
  "plist",
+ "pollster",
  "rfd",
  "serde",
  "serde_json",

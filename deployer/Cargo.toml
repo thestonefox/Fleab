@@ -3,7 +3,7 @@ name = "fleab"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Build it. Hop it. Play it. Portable Unity build deployer."
+description = "Portable desktop app for deploying and launching Unity builds."
 
 [dependencies]
 anyhow = "1"
@@ -22,6 +22,11 @@ zstd = "0.13"
 fs2 = "0.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
 plist = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
+futures-util = "0.3"
+pollster = "0.4"
 
 [build-dependencies]
 winresource = "0.1"

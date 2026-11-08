@@ -3,7 +3,7 @@ fn main() {
         let mut resource = winresource::WindowsResource::new();
         resource.set_icon("../assets/fleab.ico");
         resource.set("ProductName", "Fleab");
-        resource.set("FileDescription", "Fleab — Build it. Hop it. Play it.");
+        resource.set("FileDescription", "Fleab build deployer");
         resource.compile().expect("Windows application resources");
     }
     println!("cargo:rerun-if-changed=../assets/fleab.ico");
