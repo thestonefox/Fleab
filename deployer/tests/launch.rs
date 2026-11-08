@@ -19,7 +19,14 @@ fn setup(root: &Path) -> Profile {
         schema_version: 1,
         profile_id: p.id,
         target: Target::WindowsClient,
-        filename: "Game_OLD_20261108-090000_Windows64.tar.zst".into(),
+        filename: format!(
+            "Game_OLD_20261108-090000_{}.tar.zst",
+            if cfg!(target_arch = "aarch64") {
+                "WindowsARM64"
+            } else {
+                "Windows64"
+            }
+        ),
         entrypoint: "Game.exe".into(),
         transaction: Uuid::new_v4(),
     };

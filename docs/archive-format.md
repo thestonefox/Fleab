@@ -29,10 +29,11 @@ Names use `/`, are relative, and contain no empty, `.` or `..` components,
 backslashes, drive letters, NTFS streams, reserved device names or controls.
 Every entry is a directory, regular file, or relative symbolic link. Hardlinks,
 devices, FIFOs, sparse files and duplicate/case-colliding names are rejected.
-Symlinks must resolve lexically inside the archive and point to an existing
-non-link entry. They are created only after regular files have been extracted.
-No entry may have a symlink as a parent. This conservative rule rejects link
-chains while preserving normal bundle links to real framework directories.
+Symlinks must resolve inside the archive to an existing non-link entry. Link
+chains and directory aliases are resolved as a graph with a 40-hop bound;
+cycles and escapes are rejected. Links are created only after regular files
+have been extracted. No archive entry may have a symlink as a parent. Standard
+macOS framework links through `Versions/Current` are preserved.
 On Windows, creating symbolic links may require Developer Mode or the OS
 privilege; an unavailable privilege fails staging without changing installation.
 
@@ -47,6 +48,7 @@ Publishers validate compressed output and copy to a unique `.partial` file,
 flush it, and rename without overwrite. Discovery accepts only complete names.
 
 The Deployer limits expanded contents to 1 TiB, 250,000 entries and 4096 bytes
-per path. It rejects empty archives and requires a unique Unity player entry
+per path, and bounds each PAX metadata header to 64 KiB before parsing. It
+rejects empty archives and requires a unique Unity player entry
 point (or a validated profile override) before replacing an installation.
 

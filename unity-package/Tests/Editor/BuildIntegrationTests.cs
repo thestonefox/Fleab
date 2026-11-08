@@ -39,6 +39,9 @@ namespace Fleab.Publisher.Tests
                 Assert.AreEqual(BuildResult.Succeeded, report.summary.result);
                 Assert.IsFalse(PublisherController.Busy, "Disabled publishing must not start");
                 Assert.IsTrue(File.Exists("Library/Fleab/last-build.json"));
+#if UNITY_6000_6_OR_NEWER
+                File.Delete("Library/Fleab/last-build.json"); // Exercise BuildHistory recovery.
+#endif
                 int before = Directory.GetFiles(published, "*.tar.zst").Length;
                 PublisherController.PublishLast();
                 double deadline = EditorApplication.timeSinceStartup + 180;

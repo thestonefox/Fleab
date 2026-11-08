@@ -72,6 +72,7 @@ pub fn extract(
     cancel: &Arc<AtomicBool>,
     progress: &mut dyn FnMut(u64),
 ) -> Result<()> {
+    preflight(archive, cancel)?;
     let input = fs::File::open(archive)?;
     let mut decoder = zstd::stream::read::Decoder::new(input)?;
     decoder.window_log_max(27)?;
@@ -171,12 +172,13 @@ pub fn extract(
             "Unexpected data after TAR end"
         );
     }
-    for (name, _, resolved) in &links {
-        let kind = kinds
-            .get(resolved)
-            .context("Symbolic link points to missing entry")?;
-        ensure!(!kind.is_symlink(), "Symbolic link chains are not supported");
-        for ancestor in name.ancestors().skip(1).chain(resolved.ancestors().skip(1)) {
+    let link_map: HashMap<_, _> = links
+        .iter()
+        .map(|(name, _, target)| (name.clone(), target.clone()))
+        .collect();
+    let mut resolved_links = Vec::new();
+    for (name, target, resolved) in &links {
+        for ancestor in name.ancestors().skip(1) {
             ensure!(
                 !kinds.get(ancestor).is_some_and(|k| k.is_symlink()),
                 "Symbolic link parent is another link"
@@ -186,8 +188,14 @@ pub fn extract(
             !staging.join(name).exists(),
             "Symbolic link collides with a directory"
         );
+        let endpoint = resolve_links(resolved, &link_map, 0)?;
+        ensure!(
+            staging.join(&endpoint).exists(),
+            "Symbolic link points to missing entry"
+        );
+        resolved_links.push((name, target, endpoint));
     }
-    for (name, target, resolved) in links {
+    for (name, target, resolved) in resolved_links {
         make_link(
             Path::new(&target),
             &staging.join(name),
@@ -198,6 +206,134 @@ pub fn extract(
         set_mode(&path, mode)?;
     }
     Ok(())
+}
+
+// tar's high-level iterator buffers PAX/GNU metadata before yielding entries.
+// Bound that metadata in a streaming validation pass before handing it to tar.
+fn preflight(path: &Path, cancel: &Arc<AtomicBool>) -> Result<()> {
+    let mut input = zstd::stream::read::Decoder::new(fs::File::open(path)?)?;
+    input.window_log_max(27)?;
+    let mut block = [0u8; 512];
+    let mut buffer = [0u8; 128 * 1024];
+    let mut pax_size = None;
+    let mut total = 0u64;
+    let mut count = 0;
+    loop {
+        ensure!(!cancel.load(Ordering::Relaxed), "Deployment cancelled");
+        input
+            .read_exact(&mut block)
+            .context("Truncated TAR header or missing end markers")?;
+        if block.iter().all(|b| *b == 0) {
+            input
+                .read_exact(&mut block)
+                .context("Missing second TAR end marker")?;
+            ensure!(block.iter().all(|b| *b == 0), "Invalid TAR end marker");
+            break;
+        }
+        count += 1;
+        ensure!(count <= 500_000, "Archive header limit exceeded");
+        let h = tar::Header::from_byte_slice(&block);
+        let sum: u32 = block
+            .iter()
+            .enumerate()
+            .map(|(i, b)| {
+                if (148..156).contains(&i) {
+                    32
+                } else {
+                    u32::from(*b)
+                }
+            })
+            .sum();
+        ensure!(h.cksum()? == sum, "Invalid TAR checksum");
+        let kind = h.entry_type();
+        let raw_size = h.entry_size()?;
+        if kind.is_pax_local_extensions() {
+            ensure!(raw_size <= 65536, "PAX metadata exceeds 64 KiB");
+            let mut data = vec![0u8; raw_size as usize];
+            input.read_exact(&mut data)?;
+            let mut offset = 0;
+            while offset < data.len() {
+                let space = data[offset..]
+                    .iter()
+                    .position(|b| *b == b' ')
+                    .context("Malformed PAX record")?
+                    + offset;
+                let length = std::str::from_utf8(&data[offset..space])?.parse::<usize>()?;
+                ensure!(
+                    length > space - offset + 1
+                        && length <= data.len() - offset
+                        && data[offset + length - 1] == b'\n',
+                    "Malformed PAX length"
+                );
+                let field = &data[space + 1..offset + length - 1];
+                if let Some(value) = field.strip_prefix(b"size=") {
+                    pax_size = Some(std::str::from_utf8(value)?.parse::<u64>()?);
+                }
+                offset += length;
+            }
+            input.read_exact(&mut buffer[..((512 - raw_size % 512) % 512) as usize])?;
+            continue;
+        }
+        ensure!(
+            kind.is_file() || kind.is_dir() || kind.is_symlink(),
+            "Unsupported TAR header type"
+        );
+        let size = pax_size.take().unwrap_or(raw_size);
+        if !kind.is_file() {
+            ensure!(size == 0, "Non-file TAR entry has a payload");
+        }
+        total = total.checked_add(size).context("Archive size overflow")?;
+        ensure!(
+            total <= 1_099_511_627_776,
+            "Archive expanded size exceeds 1 TiB"
+        );
+        let mut remaining = size
+            .checked_add((512 - size % 512) % 512)
+            .context("Archive size overflow")?;
+        while remaining > 0 {
+            ensure!(!cancel.load(Ordering::Relaxed), "Deployment cancelled");
+            let length = remaining.min(buffer.len() as u64) as usize;
+            input
+                .read_exact(&mut buffer[..length])
+                .context("Truncated TAR payload")?;
+            remaining -= length as u64;
+        }
+    }
+    ensure!(
+        count > 0 && pax_size.is_none(),
+        "Empty or incomplete TAR archive"
+    );
+    let mut trailing = 0usize;
+    loop {
+        ensure!(!cancel.load(Ordering::Relaxed), "Deployment cancelled");
+        let n = input.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        trailing += n;
+        ensure!(
+            trailing <= 1_048_576 && buffer[..n].iter().all(|b| *b == 0),
+            "Unexpected archive trailer"
+        );
+    }
+    Ok(())
+}
+
+fn resolve_links(path: &Path, links: &HashMap<PathBuf, PathBuf>, depth: usize) -> Result<PathBuf> {
+    ensure!(depth < 40, "Symbolic link cycle or excessive chain");
+    let components: Vec<_> = path.iter().collect();
+    let mut prefix = PathBuf::new();
+    for (index, part) in components.iter().enumerate() {
+        prefix.push(part);
+        if let Some(target) = links.get(&prefix) {
+            let mut substituted = target.clone();
+            for tail in &components[index + 1..] {
+                substituted.push(tail);
+            }
+            return resolve_links(&substituted, links, depth + 1);
+        }
+    }
+    Ok(path.to_owned())
 }
 
 fn set_mode(path: &Path, mode: u32) -> Result<()> {

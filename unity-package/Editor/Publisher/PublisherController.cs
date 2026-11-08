@@ -14,25 +14,38 @@ namespace Fleab.Publisher
         public void OnPostprocessBuild(BuildReport report)
         {
             if (report.summary.result != BuildResult.Succeeded) return;
+            try
+            {
+                var record = Capture(report);
+                if (record == null) return;
+                PublisherController.Remember(record);
+                if (PublisherSettings.instance.automaticPublishing) EditorApplication.delayCall += () => PublisherController.Start(record);
+            }
+            catch (Exception error) { Debug.LogError("Fleab: Unity built successfully, but output discovery failed. Original build preserved. " + error); }
+        }
+        internal static BuildRecord Capture(BuildReport report)
+        {
+            if (report == null || report.summary.result != BuildResult.Succeeded) return null;
+#if UNITY_6000_6_OR_NEWER
+            if (report.summary.buildType != BuildType.Player) return null;
+#endif
             string os;
             switch (report.summary.platform)
             {
                 case BuildTarget.StandaloneWindows64: os = "windows"; break;
                 case BuildTarget.StandaloneLinux64: os = "linux"; break;
                 case BuildTarget.StandaloneOSX: os = "macos"; break;
-                default: return;
+                default: return null;
             }
-            try
-            {
-                var settings = PublisherSettings.instance;
-                string name = string.IsNullOrWhiteSpace(settings.buildNameOverride) ? PlayerSettings.productName : settings.buildNameOverride;
-                var files = Array.ConvertAll(report.GetFiles(), f => f.path);
-                var record = BuildRecord.Discover(report.summary.outputPath, files, name, PlayerSettings.bundleVersion,
-                    BuildArchitecture.Detect(report.summary.outputPath, os), report.summary.GetSubtarget<StandaloneBuildSubtarget>() == StandaloneBuildSubtarget.Server, DateTime.UtcNow);
-                PublisherController.Remember(record);
-                if (settings.automaticPublishing) EditorApplication.delayCall += () => PublisherController.Start(record);
-            }
-            catch (Exception error) { Debug.LogError("Fleab: Unity built successfully, but output discovery failed. Original build preserved. " + error); }
+            var settings = PublisherSettings.instance;
+            string name = string.IsNullOrWhiteSpace(settings.buildNameOverride) ? PlayerSettings.productName : settings.buildNameOverride;
+            var files = Array.ConvertAll(report.GetFiles(), f => f.path);
+            var record = BuildRecord.Discover(report.summary.outputPath, files, name, PlayerSettings.bundleVersion,
+                BuildArchitecture.Detect(report.summary.outputPath, os), report.summary.GetSubtarget<StandaloneBuildSubtarget>() == StandaloneBuildSubtarget.Server, report.summary.buildStartedAt);
+#if UNITY_6000_6_OR_NEWER
+            record.sessionGuid = report.summary.buildSessionGuid.ToString();
+#endif
+            return record;
         }
     }
 
@@ -61,10 +74,29 @@ namespace Fleab.Publisher
         {
             try
             {
-                if (!File.Exists(RecordPath)) throw new IOException("No successful supported build is recorded. Build a desktop player once with Fleab installed.");
-                Start(JsonUtility.FromJson<BuildRecord>(File.ReadAllText(RecordPath)));
+                Start(LastRecord());
             }
-            catch (Exception error) { EditorUtility.DisplayDialog("Fleab Publisher", error.Message, "OK"); }
+            catch (Exception error) { if (Application.isBatchMode) Debug.LogException(error); else EditorUtility.DisplayDialog("Fleab Publisher", error.Message, "OK"); }
+        }
+        internal static BuildRecord LastRecord()
+        {
+            BuildRecord saved = File.Exists(RecordPath) ? JsonUtility.FromJson<BuildRecord>(File.ReadAllText(RecordPath)) : null;
+#if UNITY_6000_6_OR_NEWER
+            BuildHistory.Refresh();
+            foreach (var guid in BuildHistory.GetAllBuilds())
+            {
+                var report = BuildHistory.LoadBuildReport(guid);
+                if (report == null || report.summary.result != BuildResult.Succeeded) continue;
+                if (report.summary.buildType != BuildType.Player) continue;
+                var target = report.summary.platform;
+                if (target != BuildTarget.StandaloneWindows64 && target != BuildTarget.StandaloneLinux64 && target != BuildTarget.StandaloneOSX) continue;
+                if (saved != null && saved.sessionGuid == guid.ToString()) return saved;
+                var record = SuccessfulBuildHook.Capture(report);
+                if (record != null) { Remember(record); return record; }
+            }
+#endif
+            if (saved == null) throw new IOException("No successful supported build is recorded. Build a desktop player once, then publish again.");
+            return saved;
         }
         [MenuItem("Tools/Fleab/Retry Publish")]
         static void Retry() => PublishLast();

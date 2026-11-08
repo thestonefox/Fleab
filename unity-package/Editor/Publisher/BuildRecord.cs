@@ -13,6 +13,7 @@ namespace Fleab.Publisher
         public string version;
         public string timestamp;
         public string platform;
+        public string sessionGuid;
         public bool server;
         public string root;
         public string[] entries;
@@ -38,6 +39,12 @@ namespace Fleab.Publisher
         public static BuildRecord Discover(string output, IEnumerable<string> reportedFiles, string product, string version, string platform, bool server, DateTime utc)
         {
             output = Path.GetFullPath(output);
+            if (platform.StartsWith("macOS", StringComparison.Ordinal) && Directory.Exists(output) && !output.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+            {
+                string[] bundles = Directory.GetDirectories(output, "*.app");
+                if (bundles.Length != 1) throw new IOException("Build output directory has no unique macOS application bundle.");
+                output = bundles[0];
+            }
             bool bundle = output.EndsWith(".app", StringComparison.OrdinalIgnoreCase) && Directory.Exists(output);
             string root = bundle || File.Exists(output) ? Path.GetDirectoryName(output) : output;
             if (!Directory.Exists(root)) throw new DirectoryNotFoundException("Unity build output is missing: " + root);
@@ -61,7 +68,12 @@ namespace Fleab.Publisher
                 string stem = Path.GetFileNameWithoutExtension(output);
                 if (Directory.Exists(output))
                 {
-                    var executables = Directory.GetFiles(output).Where(p => p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".x86_64", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".arm64", StringComparison.OrdinalIgnoreCase)).Where(p => Directory.Exists(Path.Combine(root, Path.GetFileNameWithoutExtension(p) + "_Data"))).ToArray();
+                    var executables = Directory.GetFiles(output).Where(p =>
+                    {
+                        if (!Directory.Exists(Path.Combine(root, Path.GetFileNameWithoutExtension(p) + "_Data"))) return false;
+                        if (platform.StartsWith("Windows", StringComparison.Ordinal)) return p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+                        using (var file = File.OpenRead(p)) return file.ReadByte() == 127 && file.ReadByte() == 'E' && file.ReadByte() == 'L' && file.ReadByte() == 'F';
+                    }).ToArray();
                     if (executables.Length != 1) throw new IOException("Build report output directory has no unique Unity executable.");
                     add(executables[0]); stem = Path.GetFileNameWithoutExtension(executables[0]);
                 }

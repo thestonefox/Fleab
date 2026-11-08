@@ -149,6 +149,22 @@ pub fn plan(
 ) -> Result<LaunchPlan> {
     let record =
         deployment::installed(profile, target)?.context("No build is installed for this target")?;
+    if host == std::env::consts::OS {
+        let build = crate::archives::Build::parse(Path::new(&record.filename))?;
+        let arm = std::env::consts::ARCH == "aarch64";
+        let architecture_supported = match build.platform.as_str() {
+            "WindowsARM64" | "LinuxARM64" | "macOSARM64" => arm,
+            "Linux64" => !arm,
+            "Windows64" if host == "linux" => !arm,
+            _ => true, // Windows/macOS may provide native OS compatibility.
+        };
+        ensure!(
+            architecture_supported,
+            "Installed {} build cannot launch on {}. Deployment is still supported",
+            build.platform,
+            std::env::consts::ARCH
+        );
+    }
     let root = platform::safe_destination(profile.destination(target).context("No destination")?)?;
     let configured = profile
         .executable_overrides
@@ -176,7 +192,8 @@ pub fn plan(
             {
                 use std::os::unix::fs::PermissionsExt;
                 ensure!(
-                    fs::metadata(&executable)?.permissions().mode() & 0o111 != 0,
+                    host == "windows"
+                        || fs::metadata(&executable)?.permissions().mode() & 0o111 != 0,
                     "Installed executable has no execute permission"
                 );
             }
@@ -313,6 +330,9 @@ pub fn detect(root: &Path, target: Target, override_path: Option<&str>) -> Resul
                     && full.extension().is_some_and(|s| s == "app"),
             "Executable override does not exist"
         );
+        if full.is_dir() {
+            validate_bundle(&full)?;
+        }
         return Ok(relative);
     }
     let mut candidates = Vec::new();
@@ -323,15 +343,7 @@ pub fn detect(root: &Path, target: Target, override_path: Option<&str>) -> Resul
             && path.extension().is_some_and(|s| s == "app")
             && path.join("Contents/Info.plist").is_file()
         {
-            let executables = path.join("Contents/MacOS");
-            ensure!(executables.is_dir(), "Invalid macOS bundle");
-            let mut count = 0;
-            for exe in fs::read_dir(&executables)? {
-                if exe?.file_type()?.is_file() {
-                    count += 1;
-                }
-            }
-            ensure!(count > 0, "macOS bundle has no executable");
+            validate_bundle(&path)?;
             candidates.push(PathBuf::from(entry.file_name()));
         } else if entry.file_type()?.is_file() {
             let stem = path
@@ -356,4 +368,25 @@ pub fn detect(root: &Path, target: Target, override_path: Option<&str>) -> Resul
         candidates.len()
     );
     Ok(candidates.remove(0))
+}
+
+fn validate_bundle(bundle: &Path) -> Result<()> {
+    let plist = plist::Value::from_file(bundle.join("Contents/Info.plist"))
+        .context("Invalid macOS bundle Info.plist")?;
+    let name = plist
+        .as_dictionary()
+        .and_then(|d| d.get("CFBundleExecutable"))
+        .and_then(|v| v.as_string())
+        .context("Bundle has no CFBundleExecutable")?;
+    let relative = safe_relative(name)?;
+    ensure!(
+        relative.components().count() == 1,
+        "Bundle executable must be a filename"
+    );
+    let exe = platform::resolved(&bundle.join("Contents/MacOS").join(relative))?;
+    ensure!(
+        exe.is_file() && exe.starts_with(platform::resolved(bundle)?),
+        "Bundle executable is missing or escapes bundle"
+    );
+    Ok(())
 }

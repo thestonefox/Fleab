@@ -31,6 +31,13 @@ namespace Fleab.Publisher
             walk = relative =>
             {
                 ValidateName(relative);
+                string parent = record.root;
+                var components = relative.Split('/');
+                for (int i = 0; i < components.Length - 1; i++)
+                {
+                    parent = Path.Combine(parent, components[i]);
+                    if (UnixMetadata.Link(parent) != null) throw new IOException("Archive entry has a symbolic link parent: " + relative);
+                }
                 if (!seen.Add(relative)) throw new IOException("Duplicate or case-colliding build entry: " + relative);
                 string full = Path.Combine(record.root, relative.Replace('/', Path.DirectorySeparatorChar));
                 if (!File.Exists(full) && !Directory.Exists(full)) throw new FileNotFoundException("Last build file is missing; rebuild or restore the output.", full);
@@ -44,21 +51,40 @@ namespace Fleab.Publisher
             var names = entries.ToDictionary(e => e.Name, StringComparer.Ordinal);
             foreach (Entry entry in entries.Where(e => e.Link != null))
             {
-                string link = entry.Link;
-                if (link.StartsWith("/", StringComparison.Ordinal) || link.Contains('\\') || link.Contains(':')) throw new IOException("Unsafe symbolic link: " + entry.Name);
-                var parts = entry.Name.Split('/').Take(entry.Name.Split('/').Length - 1).ToList();
-                foreach (string part in link.Split('/'))
-                {
-                    if (part == "" || part == ".") continue;
-                    if (part == "..") { if (parts.Count == 0) throw new IOException("Symbolic link escapes archive."); parts.RemoveAt(parts.Count - 1); }
-                    else { ValidateName(part); parts.Add(part); }
-                }
-                string resolved = string.Join("/", parts);
-                if (!names.TryGetValue(resolved, out Entry target) || target.Link != null) throw new IOException("Symbolic link must target an existing non-link entry: " + entry.Name);
-                for (int n = 1; n < parts.Count; n++)
-                    if (names.TryGetValue(string.Join("/", parts.Take(n)), out Entry ancestor) && ancestor.Link != null) throw new IOException("Symbolic link parent cannot be a link.");
+                string resolved = ResolveLinks(NormalizeLink(entry.Name, entry.Link), names, 0);
+                if (!names.TryGetValue(resolved, out Entry target) || target.Link != null) throw new IOException("Symbolic link must resolve to an existing entry: " + entry.Name);
             }
             return entries;
+        }
+
+        static string NormalizeLink(string name, string link)
+        {
+            if (string.IsNullOrEmpty(link) || link.StartsWith("/", StringComparison.Ordinal) || link.Contains('\\') || link.Contains(':')) throw new IOException("Unsafe symbolic link: " + name);
+            var parts = name.Split('/').Take(name.Split('/').Length - 1).ToList();
+            foreach (string part in link.Split('/'))
+            {
+                if (part == "" || part == ".") continue;
+                if (part == "..") { if (parts.Count == 0) throw new IOException("Symbolic link escapes archive."); parts.RemoveAt(parts.Count - 1); }
+                else { ValidateName(part); parts.Add(part); }
+            }
+            if (parts.Count == 0) throw new IOException("Symbolic link targets archive root.");
+            return string.Join("/", parts);
+        }
+        static string ResolveLinks(string path, Dictionary<string, Entry> names, int depth)
+        {
+            if (depth >= 40) throw new IOException("Symbolic link cycle or excessive chain.");
+            string[] parts = path.Split('/');
+            for (int n = 1; n <= parts.Length; n++)
+            {
+                string prefix = string.Join("/", parts.Take(n));
+                if (names.TryGetValue(prefix, out Entry entry) && entry.Link != null)
+                {
+                    string substituted = NormalizeLink(entry.Name, entry.Link);
+                    if (n < parts.Length) substituted += "/" + string.Join("/", parts.Skip(n));
+                    return ResolveLinks(substituted, names, depth + 1);
+                }
+            }
+            return path;
         }
 
         public static void Create(BuildRecord record, string archive, Action<string, float> progress = null)
@@ -74,8 +100,8 @@ namespace Fleab.Publisher
                     {
                         progress?.Invoke("Compression", (float)index++ / entries.Count);
                         long size = e.Directory || e.Link != null ? 0 : new FileInfo(e.Full).Length;
-                        if (size > 8589934591L) throw new IOException("Individual build file exceeds USTAR size limit (8 GiB).");
                         var pax = new StringBuilder();
+                        if (size > 8589934591L) Pax(pax, "size", size.ToString(CultureInfo.InvariantCulture));
                         if (Encoding.UTF8.GetByteCount(e.Name) > 100 || e.Name.Any(c => c > 127)) Pax(pax, "path", e.Name);
                         if (e.Link != null && (Encoding.UTF8.GetByteCount(e.Link) > 100 || e.Link.Any(c => c > 127))) Pax(pax, "linkpath", e.Link);
                         if (pax.Length > 0)
@@ -83,7 +109,7 @@ namespace Fleab.Publisher
                             byte[] data = Encoding.UTF8.GetBytes(pax.ToString());
                             Header(zstd, "PaxHeader", null, 420, data.Length, 'x'); zstd.Write(data, 0, data.Length); Pad(zstd, data.Length);
                         }
-                        Header(zstd, Encoding.UTF8.GetByteCount(e.Name) <= 100 ? e.Name : "PaxEntry", e.Link != null && Encoding.UTF8.GetByteCount(e.Link) <= 100 ? e.Link : null, e.Mode, size, e.Link != null ? '2' : e.Directory ? '5' : '0');
+                        Header(zstd, Encoding.UTF8.GetByteCount(e.Name) <= 100 ? e.Name : "PaxEntry", e.Link != null && Encoding.UTF8.GetByteCount(e.Link) <= 100 ? e.Link : null, e.Mode, size > 8589934591L ? 0 : size, e.Link != null ? '2' : e.Directory ? '5' : '0');
                         if (!e.Directory && e.Link == null)
                         {
                             using (var input = new FileStream(e.Full, FileMode.Open, FileAccess.Read, FileShare.Read))
@@ -129,6 +155,7 @@ namespace Fleab.Publisher
             using (var stream = new DecompressionStream(input))
             {
                 var header = new byte[512]; var buffer = new byte[131072];
+                long? paxSize = null;
                 while (true)
                 {
                     ReadExact(stream, header, 512);
@@ -137,6 +164,25 @@ namespace Fleab.Publisher
                     int sum = 0; for (int i = 0; i < 512; i++) sum += i >= 148 && i < 156 ? 32 : header[i];
                     if (sum != expected) throw new IOException("Invalid TAR checksum.");
                     long size = Convert.ToInt64(Encoding.ASCII.GetString(header, 124, 12).Trim('\0', ' '), 8);
+                    if (header[156] == (byte)'x')
+                    {
+                        if (size > 65536) throw new IOException("PAX metadata too large.");
+                        var data = new byte[(int)size]; ReadExact(stream, data, data.Length);
+                        int offset = 0;
+                        while (offset < data.Length)
+                        {
+                            int space = Array.IndexOf(data, (byte)' ', offset);
+                            if (space < 0) throw new IOException("Invalid PAX record.");
+                            int length = int.Parse(Encoding.ASCII.GetString(data, offset, space - offset), CultureInfo.InvariantCulture);
+                            if (length <= space-offset+1 || offset+length > data.Length) throw new IOException("Invalid PAX record length.");
+                            string field = Encoding.UTF8.GetString(data, space+1, offset+length-space-2);
+                            if (field.StartsWith("size=", StringComparison.Ordinal)) paxSize = long.Parse(field.Substring(5), CultureInfo.InvariantCulture);
+                            offset += length;
+                        }
+                        ReadExact(stream, buffer, (int)((512-size%512)%512));
+                        continue;
+                    }
+                    if (paxSize.HasValue) { size = paxSize.Value; paxSize = null; }
                     long remaining = size + (512 - size % 512) % 512;
                     while (remaining > 0) { int n = (int)Math.Min(buffer.Length, remaining); ReadExact(stream, buffer, n); remaining -= n; }
                 }

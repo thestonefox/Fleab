@@ -1,0 +1,3 @@
+[target.'cfg(target_os = "windows")']
+# Portable releases must not depend on an installed Visual C++ runtime.
+rustflags = ["-C", "target-feature=+crt-static"]

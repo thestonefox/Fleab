@@ -8,6 +8,7 @@ pub(super) struct Editor {
     runner_args: String,
     error: String,
 }
+
 impl Editor {
     pub fn new(profile: Profile, existing: bool) -> Self {
         Self {
@@ -160,6 +161,66 @@ impl FleabApp {
         }
         if open {
             self.editor = Some(editor);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn text_bounds(shape: &egui::epaint::Shape, found: &mut Vec<egui::Rect>) {
+        match shape {
+            egui::epaint::Shape::Text(text) if text.galley.text() == "Save profile" => {
+                found.push(egui::Rect::from_min_size(text.pos, text.galley.size()))
+            }
+            egui::epaint::Shape::Vec(shapes) => {
+                for shape in shapes {
+                    text_bounds(shape, found);
+                }
+            }
+            _ => (),
+        }
+    }
+    #[test]
+    fn settings_save_stays_inside_small_windows() {
+        for size in [egui::vec2(700.0, 490.0), egui::vec2(480.0, 390.0)] {
+            let ctx = egui::Context::default();
+            let mut app = FleabApp {
+                config: Config::default(),
+                config_path: None,
+                _config_lock: None,
+                read_only: false,
+                builds: Vec::new(),
+                selected_build: 0,
+                targets: BTreeMap::new(),
+                runners: Vec::new(),
+                status: String::new(),
+                error: false,
+                worker: None,
+                editor: Some(Editor::new(Profile::default(), false)),
+                children: Vec::new(),
+            };
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            // egui windows settle their auto-size on a second layout pass.
+            let mut bounds = Vec::new();
+            for _ in 0..3 {
+                let output = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(screen),
+                        ..Default::default()
+                    },
+                    |ctx| app.settings(ctx),
+                );
+                bounds.clear();
+                for shape in &output.shapes {
+                    text_bounds(&shape.shape, &mut bounds);
+                }
+            }
+            assert!(!bounds.is_empty(), "Save profile must be rendered");
+            assert!(
+                bounds.iter().all(|r| screen.contains_rect(*r)),
+                "Save profile outside viewport: {bounds:?}"
+            );
         }
     }
 }

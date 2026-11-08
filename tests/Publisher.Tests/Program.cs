@@ -50,8 +50,29 @@ try
         else { var bytes = new byte[20]; bytes[0]=127; bytes[1]=69; bytes[2]=76; bytes[3]=70; bytes[18]=62; File.WriteAllBytes(main, bytes); Directory.CreateDirectory(Path.Combine(dir, "Game_Data")); }
         Check(BuildArchitecture.Detect(main, item.Item1) == item.Item3, "Architecture read from " + item.Item1 + " output");
         var r = BuildRecord.Discover(main, new[] { main }, "Game", "1", item.Item3, false, DateTime.UtcNow);
+        var fromDirectory = BuildRecord.Discover(dir, new[] { main }, "Game", "1", item.Item3, false, DateTime.UtcNow);
+        Check(fromDirectory.entries.SequenceEqual(r.entries), item.Item1 + " directory output discovery");
         string archive = ArchivePublisher.Publish(r, publish); TarZstd.Validate(archive);
         Check(true, item.Item1 + " structure packaged");
+    }
+    if (!OperatingSystem.IsWindows())
+    {
+        string bundle = Path.Combine(root, "links", "Game.app");
+        string framework = Path.Combine(bundle, "Contents", "Frameworks", "Test.framework");
+        string versions = Path.Combine(framework, "Versions");
+        Directory.CreateDirectory(Path.Combine(versions, "A"));
+        File.WriteAllText(Path.Combine(versions, "A", "Test"), "framework payload");
+        Directory.CreateSymbolicLink(Path.Combine(versions, "Current"), "A");
+        File.CreateSymbolicLink(Path.Combine(framework, "Test"), "Versions/Current/Test");
+        var r = BuildRecord.Discover(bundle, new[] { bundle }, "Links", "1", "macOS64", false, DateTime.UtcNow);
+        string a = ArchivePublisher.Publish(r, publish); TarZstd.Validate(a);
+        Check(true, "Safe macOS framework symlink chain preserved");
+        File.CreateSymbolicLink(Path.Combine(framework, "escape"), "../../../../../../outside");
+        Fails(() => ArchivePublisher.Publish(r, publish), "Escaping symlink rejected by publisher");
+        File.Delete(Path.Combine(framework, "escape"));
+        File.CreateSymbolicLink(Path.Combine(framework, "cycle1"), "cycle2");
+        File.CreateSymbolicLink(Path.Combine(framework, "cycle2"), "cycle1");
+        Fails(() => ArchivePublisher.Publish(r, publish), "Symlink cycle rejected by publisher");
     }
     Console.WriteLine($"{passed} publisher assertions passed.");
 }

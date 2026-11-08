@@ -16,6 +16,10 @@ fn temp() -> tempfile::TempDir {
     tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap()
 }
 fn fixture() -> PathBuf {
+    if let Some(dir) = std::env::var_os("FLEAB_FIXTURES_DIR") {
+        return PathBuf::from(dir)
+            .join("Interop%5FGame_1.2%5F%CE%B2_20261108-093000_Windows64.tar.zst");
+    }
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../tests/fixtures/Interop%5FGame_1.2%5F%CE%B2_20261108-093000_Windows64.tar.zst")
 }
@@ -318,6 +322,32 @@ fn malicious_archives_are_rejected() {
         );
     }
     assert!(!root.path().join("outside").exists());
+}
+
+#[test]
+fn oversized_pax_metadata_is_rejected_before_allocation() {
+    let root = temp();
+    let path = root.path().join("oversized.tar.zst");
+    let mut h = tar::Header::new_ustar();
+    h.set_path("pax").unwrap();
+    h.set_entry_type(tar::EntryType::XHeader);
+    h.set_size(1 << 40);
+    h.set_mode(0o644);
+    h.set_cksum();
+    let file = fs::File::create(&path).unwrap();
+    let mut encoder = zstd::Encoder::new(file, 1).unwrap();
+    std::io::Write::write_all(&mut encoder, h.as_bytes()).unwrap();
+    encoder.finish().unwrap();
+    let stage = root.path().join("stage");
+    fs::create_dir(&stage).unwrap();
+    let error = archives::extract(
+        &path,
+        &stage,
+        &Arc::new(AtomicBool::new(false)),
+        &mut |_| {},
+    )
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("64 KiB"));
 }
 
 #[test]

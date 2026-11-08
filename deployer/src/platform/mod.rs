@@ -66,6 +66,28 @@ pub fn safe_destination(path: &Path) -> Result<PathBuf> {
             }
         }
     }
+    if let Some(user) = directories::UserDirs::new() {
+        for folder in [
+            user.desktop_dir(),
+            user.document_dir(),
+            user.download_dir(),
+            user.picture_dir(),
+            user.audio_dir(),
+            user.video_dir(),
+            user.public_dir(),
+            user.template_dir(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Ok(folder) = resolved(folder) {
+                ensure!(
+                    !folder.starts_with(&p),
+                    "A user folder root or its ancestor cannot be a destination"
+                );
+            }
+        }
+    }
     #[cfg(windows)]
     for key in [
         "SystemRoot",
