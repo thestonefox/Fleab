@@ -6,6 +6,7 @@
 **/obj/
 !tests/**/*.csproj
 !tools/**/*.csproj
+**/__pycache__/
 #
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore
 #

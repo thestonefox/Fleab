@@ -1,0 +1,27 @@
+name: Unity package integration
+on:
+  workflow_dispatch:
+    inputs:
+      build_target:
+        description: Desktop output to build with the installed Unity Editor
+        type: choice
+        options: [Windows64, Linux64, macOS]
+        default: Windows64
+        required: true
+permissions:
+  contents: read
+jobs:
+  unity:
+    # Supply a licensed Windows runner with desktop build modules. No Unity
+    # credentials or license files are committed to the repository.
+    runs-on: [self-hosted, Windows, unity]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile and test the package with real Windows builds
+        shell: pwsh
+        run: ./tools/test-unity.ps1 -UnityEditor "$env:UNITY_EDITOR_PATH" -BuildPlayers -BuildTarget '${{ inputs.build_target }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unity-test-results
+          path: .tools/unity-validation/results*
