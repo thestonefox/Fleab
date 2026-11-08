@@ -1,3 +1,8 @@
+mod design;
+mod icons;
+#[cfg(target_os = "linux")]
+mod linux_theme;
+mod main_view;
 mod settings;
 use crate::{
     archives::{self, Build, Target},
@@ -6,7 +11,7 @@ use crate::{
     profiles::{self, Config, Profile},
 };
 use anyhow::{Context, Result};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use fs2::FileExt;
 use std::{
     collections::BTreeMap,
@@ -62,10 +67,9 @@ pub struct FleabApp {
 
 impl FleabApp {
     pub fn new(ctx: &egui::Context) -> Self {
-        let mut style = (*ctx.style()).clone();
-        style.spacing.item_spacing = egui::vec2(10.0, 10.0);
-        style.spacing.button_padding = egui::vec2(16.0, 9.0);
-        ctx.set_style(style);
+        design::install(ctx);
+        #[cfg(target_os = "linux")]
+        linux_theme::watch(ctx);
         let mut app = Self {
             config: Config::default(),
             config_path: None,
@@ -322,6 +326,11 @@ impl FleabApp {
 }
 
 impl eframe::App for FleabApp {
+    #[cfg(target_os = "linux")]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
+        linux_theme::system_input(ctx, input);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.poll(ctx);
         if let Some(worker) = &self.worker {
@@ -331,188 +340,10 @@ impl eframe::App for FleabApp {
                 worker.cancel.store(true, Ordering::Relaxed);
             }
         }
-        egui::TopBottomPanel::top("header").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading(RichText::new("Fleab").color(Color32::from_rgb(223, 175, 55)));
-                ui.label("Build it. Hop it. Play it.");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .add_enabled(
-                            self.worker.is_none() && !self.read_only,
-                            egui::Button::new("Settings"),
-                        )
-                        .clicked()
-                    {
-                        self.editor = Some(settings::Editor::new(
-                            self.profile().cloned().unwrap_or_default(),
-                            self.profile().is_some(),
-                        ));
-                    }
-                });
-            });
-        });
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.add_space(10.0);
-                let busy = self.worker.is_some() || self.editor.is_some();
-                let mut selected = self.config.selected_profile;
-                ui.label(RichText::new("Game").strong());
-                ui.add_enabled_ui(!busy && self.editor.is_none() && !self.read_only, |ui| {
-                    egui::ComboBox::from_id_salt("game")
-                        .width(ui.available_width())
-                        .selected_text(
-                            self.profile()
-                                .map(|p| p.name.as_str())
-                                .unwrap_or("Create a profile in Settings"),
-                        )
-                        .show_ui(ui, |ui| {
-                            for p in &self.config.profiles {
-                                ui.selectable_value(&mut selected, Some(p.id), &p.name);
-                            }
-                        });
-                });
-                if selected != self.config.selected_profile {
-                    let mut config = self.config.clone();
-                    config.selected_profile = selected;
-                    match self.save(config) {
-                        Ok(()) => {
-                            self.builds.clear();
-                            self.targets.clear();
-                            self.refresh(ctx);
-                        }
-                        Err(e) => self.set_error(format!("{e:#}")),
-                    }
-                }
-                ui.label(RichText::new("Build").strong());
-                ui.add_enabled_ui(!busy && !self.builds.is_empty(), |ui| {
-                    egui::ComboBox::from_id_salt("build")
-                        .width(ui.available_width())
-                        .selected_text(
-                            self.builds
-                                .get(self.selected_build)
-                                .map(|b| b.filename.as_str())
-                                .unwrap_or("No matching builds"),
-                        )
-                        .show_ui(ui, |ui| {
-                            for (i, b) in self.builds.iter().enumerate() {
-                                ui.selectable_value(&mut self.selected_build, i, &b.filename);
-                            }
-                        });
-                });
-                let target = self.builds.get(self.selected_build).map(|b| b.target);
-                ui.label(RichText::new("Destination").strong());
-                ui.label(
-                    self.profile()
-                        .and_then(|p| target.and_then(|t| p.destination(t)))
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "—".into()),
-                );
-                ui.label(RichText::new("Currently installed").strong());
-                let state = target.and_then(|t| self.targets.get(&t));
-                if let Some(record) = state.and_then(|s| s.installed.as_ref()) {
-                    ui.label(&record.filename);
-                } else if target.is_none() {
-                    let records: Vec<_> = self
-                        .targets
-                        .iter()
-                        .filter_map(|(target, state)| {
-                            state
-                                .installed
-                                .as_ref()
-                                .map(|r| format!("{}: {}", target.label(), r.filename))
-                        })
-                        .collect();
-                    ui.label(if records.is_empty() {
-                        "No recorded installation".into()
-                    } else {
-                        records.join("\n")
-                    });
-                } else {
-                    ui.label("No recorded installation");
-                }
-                if let Some(error) = state.and_then(|s| s.error.as_ref()) {
-                    ui.colored_label(Color32::LIGHT_RED, error);
-                }
-                let launch_reason = state.and_then(|s| s.launch_error.clone());
-                let launch_enabled = state.is_some_and(|s| {
-                    s.installed.is_some() && s.error.is_none() && s.launch_error.is_none()
-                });
-                let running = target.is_some_and(|t| {
-                    self.children.iter().any(|(profile, ct, _)| {
-                        Some(*profile) == self.config.selected_profile && *ct == t
-                    })
-                });
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            !busy && target.is_some() && !self.read_only && !running,
-                            egui::Button::new("Deploy"),
-                        )
-                        .on_hover_text(if running {
-                            "Close the running game before deploying"
-                        } else {
-                            "Install the selected archive"
-                        })
-                        .clicked()
-                    {
-                        self.deploy(ctx);
-                    }
-                    if ui
-                        .add_enabled(!busy && launch_enabled, egui::Button::new("Launch"))
-                        .on_hover_text(
-                            launch_reason
-                                .as_deref()
-                                .unwrap_or("Start the currently installed build"),
-                        )
-                        .clicked()
-                        && let Some(target) = target
-                    {
-                        self.launch(ctx, target);
-                    }
-                    if ui
-                        .add_enabled(
-                            !busy && self.profile().is_some() && !self.read_only,
-                            egui::Button::new("Refresh"),
-                        )
-                        .clicked()
-                    {
-                        self.refresh(ctx);
-                    }
-                });
-                if let Some(reason) = launch_reason {
-                    ui.small(reason);
-                }
-                if let Some(worker) = &self.worker
-                    && let Ok(progress) = worker.progress.lock()
-                {
-                    let bar = egui::ProgressBar::new(progress.fraction.unwrap_or(0.0))
-                        .text(progress.phase);
-                    ui.add(if progress.fraction.is_none() {
-                        bar.animate(true)
-                    } else {
-                        bar
-                    });
-                    if progress.cancellable && ui.button("Cancel").clicked() {
-                        worker.cancel.store(true, Ordering::Relaxed);
-                    }
-                }
-                ui.separator();
-                egui::ScrollArea::vertical()
-                    .max_height(110.0)
-                    .show(ui, |ui| {
-                        ui.label(RichText::new(&self.status).color(if self.error {
-                            Color32::LIGHT_RED
-                        } else {
-                            ui.visuals().text_color()
-                        }));
-                    });
-                if self.read_only
-                    && let Some(path) = &self.config_path
-                {
-                    ui.small(format!("Configuration: {}", path.display()));
-                }
-            });
-        });
-        self.settings(ctx);
+        if self.editor.is_some() {
+            self.settings(ctx);
+        } else {
+            self.main_view(ctx);
+        }
     }
 }

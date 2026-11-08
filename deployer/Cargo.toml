@@ -23,6 +23,11 @@ fs2 = "0.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
 plist = "1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
+futures-util = "0.3"
+pollster = "0.4"
+
 [build-dependencies]
 winresource = "0.1"
 
