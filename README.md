@@ -26,7 +26,7 @@ always-on target computer is needed.
 1. In Unity Package Manager, choose **Install package from Git URL** and paste:
 
    ```text
-   https://github.com/thestonefox/Fleab.git?path=/unity-package#v0.1.0
+   https://github.com/thestonefox/Fleab.git?path=/unity-package#v0.2.0
    ```
 
 2. Open **Tools > Fleab > Settings**, choose a publishing folder and enable

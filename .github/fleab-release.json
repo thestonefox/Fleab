@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "version": "v0.2.0",
+  "previous_version": "v0.1.0",
+  "bump": "minor",
+  "pr_number": 1,
+  "merge_sha": "c71bfab44c6efcf29c6239f79c71252ce8f470a5"
+}
