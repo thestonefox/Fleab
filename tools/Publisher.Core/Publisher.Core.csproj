@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <LangVersion>9</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../unity-package/Editor/Publisher/BuildRecord.cs" />
+    <Compile Include="../../unity-package/Editor/Publisher/ArchivePublisher.cs" />
+    <Compile Include="../../unity-package/Editor/Utilities/*.cs" />
+    <Reference Include="ZstdSharp"><HintPath>../../unity-package/Editor/ThirdParty/ZstdSharp.dll</HintPath></Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe"><HintPath>../../unity-package/Editor/ThirdParty/System.Runtime.CompilerServices.Unsafe.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

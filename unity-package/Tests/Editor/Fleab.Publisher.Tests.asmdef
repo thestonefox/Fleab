@@ -1,0 +1,7 @@
+{
+  "name": "Fleab.Publisher.Tests",
+  "references": ["Fleab.Publisher.Editor"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}
