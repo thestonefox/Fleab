@@ -1,0 +1,25 @@
+[package]
+name = "fleab"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Build it. Hop it. Play it. Portable Unity build deployer."
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
+directories = "6"
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.37"
+tar = "0.4"
+tempfile = "3"
+uuid = { version = "1", features = ["v4", "serde"] }
+walkdir = "2"
+zstd = "0.13"
+fs2 = "0.4"
+
+[dev-dependencies]
+

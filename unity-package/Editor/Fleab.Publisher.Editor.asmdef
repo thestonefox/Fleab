@@ -1,0 +1,7 @@
+{
+  "name": "Fleab.Publisher.Editor",
+  "rootNamespace": "Fleab.Publisher",
+  "includePlatforms": ["Editor"],
+  "allowUnsafeCode": false,
+  "autoReferenced": true
+}
