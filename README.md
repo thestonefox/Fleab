@@ -1,5 +1,5 @@
-<p align="center">
-  <img src="assets/fleab.svg" width="180" alt="Fleab logo: a flea wearing a builder's hard hat" />
+<p align="left">
+  <img src="assets/fleab.svg" width="90" alt="Fleab logo: a flea wearing a builder's hard hat" />
 </p>
 
 # Fleab
