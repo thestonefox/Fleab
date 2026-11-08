@@ -36,7 +36,9 @@ pub fn overlaps(a: &Path, b: &Path) -> bool {
         PathBuf::from(a.to_string_lossy().to_lowercase()),
         PathBuf::from(b.to_string_lossy().to_lowercase()),
     );
-    a.starts_with(&b) || b.starts_with(&a)
+    #[cfg(any(windows, target_os = "macos"))]
+    let (a, b) = (a.as_path(), b.as_path());
+    a.starts_with(b) || b.starts_with(a)
 }
 
 pub fn safe_destination(path: &Path) -> Result<PathBuf> {

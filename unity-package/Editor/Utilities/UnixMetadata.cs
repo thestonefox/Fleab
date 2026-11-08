@@ -11,6 +11,26 @@ namespace Fleab.Publisher
         static extern IntPtr ReadLink(string path, byte[] buffer, UIntPtr size);
         [DllImport("libc", SetLastError = true, EntryPoint = "lstat")]
         static extern int LStat(string path, IntPtr buffer);
+        [DllImport("libc", SetLastError = true, EntryPoint = "lstat$INODE64")]
+        static extern int LStatDarwinInode64(string path, IntPtr buffer);
+        [DllImport("libc", SetLastError = true, EntryPoint = "__lxstat")]
+        static extern int LStatLegacyLinux(int version, string path, IntPtr buffer);
+        static bool legacyLinuxStat;
+
+        static int Stat(string path, IntPtr buffer, bool mac)
+        {
+            if (mac && RuntimeInformation.ProcessArchitecture == Architecture.X64)
+                return LStatDarwinInode64(path, buffer);
+            if (legacyLinuxStat) return LStatLegacyLinux(1, path, buffer);
+            try { return LStat(path, buffer); }
+            catch (EntryPointNotFoundException) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && RuntimeInformation.ProcessArchitecture == Architecture.X64)
+            {
+                // glibc before 2.33 exposes this through its versioned wrapper.
+                // Version 1 is the Linux x64 stat ABI, with mode at offset 24.
+                legacyLinuxStat = true;
+                return LStatLegacyLinux(1, path, buffer);
+            }
+        }
 
         public static string Link(string path)
         {
@@ -34,10 +54,14 @@ namespace Fleab.Publisher
                 IntPtr buffer = Marshal.AllocHGlobal(512);
                 try
                 {
-                    if (LStat(path, buffer) != 0) throw new IOException("Cannot inspect Unix mode: " + path);
+                    bool mac = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+                    // Intel Darwin exports the modern stat layout through a
+                    // suffixed symbol. Plain lstat uses its legacy layout.
+                    // ARM64 Darwin exposes only the modern, unsuffixed ABI.
+                    int result = Stat(path, buffer, mac);
+                    if (result != 0) throw new IOException("Cannot inspect Unix mode: " + path);
                     // Darwin stat uses a 16-bit mode at offset 4. Linux x64
                     // uses offset 24; Linux ARM64 uses offset 16.
-                    bool mac = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
                     int offset = mac ? 4 : RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? 16 : 24;
                     int mode = (mac ? Marshal.ReadInt16(buffer, offset) : Marshal.ReadInt32(buffer, offset)) & 511;
                     return directory ? mode | 448 : mode;

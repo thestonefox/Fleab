@@ -5,4 +5,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../../tools/Publisher.Core/Publisher.Core.csproj" /></ItemGroup>
+  <ItemGroup>
+    <Reference Include="ZstdSharp"><HintPath>../../unity-package/Editor/ThirdParty/ZstdSharp.dll</HintPath></Reference>
+  </ItemGroup>
 </Project>

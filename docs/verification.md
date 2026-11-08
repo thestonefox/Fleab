@@ -6,9 +6,9 @@ checks from automation and hardware checks that remain outstanding.
 | Check | Result |
 |---|---|
 | Rust formatting | Passed |
-| Clippy, all targets in this workspace, warnings denied | Passed on Windows x64 |
-| Rust unit/integration suite | 23 passed; 2 real-build tests opt-in |
-| Standalone managed publisher | 24 assertions passed on Windows |
+| Clippy, all targets in this workspace, warnings denied | Passed on Windows x64 and Linux x64 (WSL Ubuntu) |
+| Rust unit/integration suite | 23 passed on Windows; 24 on native Linux x64; 2 real-build tests opt-in |
+| Standalone managed publisher | 27 assertions passed on Windows; 30 on Linux x64 |
 | Unity Editor | Unity 6000.6.8f1; 6 package tests passed |
 | Unity Windows publishing acceptance | 7 tests passed, including two real builds |
 | Unity Linux cross-build publishing acceptance | 7 tests passed, including two real builds |
@@ -18,7 +18,7 @@ checks from automation and hardware checks that remain outstanding.
 | Clean Windows Sandbox | Core tests, real native Unity deploy/launch, process protection and GUI startup passed |
 | Native release | Windows x64 release built with static CRT |
 | Small-window settings layout | Offscreen egui tests passed at 700×490 and 480×390 |
-| Workflow files | YAML parsed locally; hosted workflows not yet run |
+| Workflow files | actionlint passed; first hosted matrix exposed the issues below |
 
 The initial clean-Sandbox test exposed a missing Visual C++ runtime dependency.
 Static CRT linking fixed it. The successful guest had networking and clipboard
@@ -38,12 +38,15 @@ provided for native CI, but were not executed on this Windows host.
 
 ## Still requires an appropriate environment
 
-* Native Linux x64/ARM64 and macOS Intel/Apple Silicon compilation/runtime.
+* Native Linux ARM64 compilation/runtime, Linux x64 desktop runtime beyond WSL,
+  and macOS Intel/Apple Silicon desktop runtime. Intel CI must be rerun after
+  the metadata correction below; Apple Silicon compiled and packaged in CI.
 * Windows ARM64 compilation/runtime. Local Visual Studio lacks its ARM64 C++
   compiler; native ARM64 GitHub Actions jobs are configured.
 * Steam Deck X11/Wayland, XDG portal pickers, actual Wine and Proton launches,
   Steam Linux Runtime requirements, prefixes and game-specific compatibility.
-* Native Unix publisher modes and framework symlinks on real filesystems.
+* Native macOS publisher modes and framework symlinks on hardware. The Linux
+  publisher's modes and framework links have passed native filesystem tests.
 * Dedicated Server player builds: this Unity installation has client desktop
   modules, but no Dedicated Server playback variations. Configuration-based
   server identification and independent server targets are implemented.
@@ -54,8 +57,10 @@ provided for native CI, but were not executed on this Windows host.
   bundles. Packaging applies only an ad-hoc signature.
 * Full manual interaction on each desktop platform and accessibility tooling.
 
-The six-platform CI and portable-release workflows are supplied, not reported
-as passed. No remote tags, releases or uploads were created. The Unity package
+The first hosted CI run passed macOS ARM64. Its Linux jobs failed Clippy and
+macOS Intel failed publisher-archive deployment tests, as described below.
+The full six-platform matrix is not yet reported as passed. No remote tags,
+releases or uploads were created by these local verification tasks. The Unity package
 is ready at `unity-package/`; Windows build/package artifacts are generated in
 `target/release/` and `dist/`. Local toolchains, isolated Unity projects, raw
 test logs and disposable Sandbox output remain ignored under `.tools/`.
@@ -70,6 +75,31 @@ workflow definitions also pass actionlint. A disposable clone of the actual
 project was stamped as 0.2.0; `cargo metadata --locked` confirmed that the Rust
 manifest, lockfile and Unity package agree without modifying main. Release
 rules and notes use locked official semantic-release plugins.
+
+## First hosted CI corrections
+
+The Linux failures were redundant borrows in `platform::overlaps`, exposed
+because Linux retains `&Path` values where Windows/macOS use case-folded
+`PathBuf` buffers. Both branches now compare `&Path` references. Native Linux
+Clippy with warnings denied passes after the correction.
+All 24 Linux Rust tests then passed using the publisher's Linux-generated
+fixture. Test executables ran from a native Linux temporary filesystem so
+permission/symlink assertions did not depend on DrvFS mount emulation.
+
+The macOS Intel failure was consistent with incorrect permissions in the
+C#-produced archive: the raw `lstat` symbol uses Darwin's legacy layout on x64,
+while the publisher read the modern layout, as defined in
+[Apple's ABI headers](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/cdefs.h).
+Intel Darwin now calls
+`lstat$INODE64`; Apple Silicon retains the modern unsuffixed function. An
+explicit archive regression check verifies mode 0644 and the player's original
+bytes before Rust consumes the fixture. Older Linux x64 glibc also receives a
+versioned `__lxstat` fallback, verified against Ubuntu 20.04 headers/runtime.
+
+Executable-read errors now retain their file/permission context instead of
+being reported only as zero detected candidates. Artifact upload/download
+actions have been updated to their maintained Node runtime versions. The
+macOS Intel correction still requires the next hosted run for confirmation.
 
 ## Known operational limits
 

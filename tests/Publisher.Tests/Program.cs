@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Formats.Tar;
 using Fleab.Publisher;
+using ZstdSharp;
 
 string root = Path.Combine(Path.GetTempPath(), "fleab-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
@@ -15,6 +17,7 @@ try
     Check(BuildRecord.NameToken("a/b: ü") == "a%2Fb%3A%20%C3%BC", "UTF-8 and filename character escaping");
     string output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
     string exe = Path.Combine(output, "Game.exe"); File.WriteAllBytes(exe, new byte[] { 77, 90, 0, 0 });
+    if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(exe, (UnixFileMode)420); // 0644, deliberately non-executable.
     Directory.CreateDirectory(Path.Combine(output, "Game_Data")); File.WriteAllText(Path.Combine(output, "Game_Data", "data"), "Unity test data");
     string longName = new string('x', 110) + "ü.txt"; File.WriteAllText(Path.Combine(output, "Game_Data", longName), "long UTF-8 path");
     File.WriteAllText(Path.Combine(output, "unrelated.txt"), "must not publish");
@@ -27,6 +30,20 @@ try
     Check(first != second && File.Exists(first) && File.Exists(second), "Same-version collision never overwrites");
     Check(Path.GetFileName(second).Contains('~'), "Collision suffix is explicit");
     TarZstd.Validate(first); Check(true, "Managed zstd and TAR validation round trip");
+    using (var compressed = File.OpenRead(first))
+    using (var decoded = new DecompressionStream(compressed))
+    using (var tar = new TarReader(decoded))
+    {
+        bool found = false; TarEntry entry;
+        while ((entry = tar.GetNextEntry()) != null)
+        {
+            if (entry.Name != "Game.exe") continue;
+            found = true;
+            Check((int)entry.Mode == 420, "Publisher preserves player read permissions across host ABIs");
+            using (var bytes = new MemoryStream()) { entry.DataStream.CopyTo(bytes); Check(bytes.ToArray().SequenceEqual(new byte[] { 77,90,0,0 }), "Published executable header remains readable and unchanged"); }
+        }
+        Check(found, "Publisher archive contains the player entry point");
+    }
     string fixtures = args.Length > 0 ? args[0] : null;
     if (fixtures != null) { Directory.CreateDirectory(fixtures); File.Copy(first, Path.Combine(fixtures, record.ArchiveName), true); }
     string bad = Path.Combine(root, "corrupt.zst"); File.WriteAllBytes(bad, File.ReadAllBytes(first).Take(20).ToArray());

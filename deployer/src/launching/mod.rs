@@ -307,12 +307,17 @@ pub fn launch(profile: &Profile, target: Target, runners: &[Runner]) -> Result<C
     plan.spawn()
 }
 
-fn magic(path: &Path, expected: &[u8]) -> bool {
+fn magic(path: &Path, expected: &[u8]) -> Result<bool> {
     let mut data = [0u8; 4];
-    fs::File::open(path)
-        .and_then(|mut f| f.read_exact(&mut data))
-        .is_ok()
-        && data.starts_with(expected)
+    let mut file = fs::File::open(path)
+        .with_context(|| format!("Cannot read executable header: {}", path.display()))?;
+    match file.read_exact(&mut data) {
+        Ok(()) => Ok(data.starts_with(expected)),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => {
+            Err(error).with_context(|| format!("Cannot read executable header: {}", path.display()))
+        }
+    }
 }
 
 pub fn detect(root: &Path, target: Target, override_path: Option<&str>) -> Result<PathBuf> {
@@ -355,8 +360,8 @@ pub fn detect(root: &Path, target: Target, override_path: Option<&str>) -> Resul
                     && path
                         .extension()
                         .is_some_and(|s| s.eq_ignore_ascii_case("exe"))
-                    && magic(&path, b"MZ"))
-                    || (target.os() == "linux" && magic(&path, b"\x7fELF")))
+                    && magic(&path, b"MZ")?)
+                    || (target.os() == "linux" && magic(&path, b"\x7fELF")?))
             {
                 candidates.push(PathBuf::from(entry.file_name()));
             }
