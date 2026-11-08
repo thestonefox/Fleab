@@ -44,26 +44,17 @@ fn link_target(name: &Path, target: &str) -> Result<PathBuf> {
         !target.is_empty() && !target.starts_with('/') && !target.contains(['\\', ':']),
         "Unsafe symbolic link"
     );
-    let mut parts: Vec<String> = name
-        .parent()
-        .unwrap_or(Path::new(""))
-        .iter()
-        .map(|s| s.to_string_lossy().into_owned())
-        .collect();
     for part in target.split('/') {
         match part {
-            "" | "." => (),
-            ".." => {
-                ensure!(parts.pop().is_some(), "Symbolic link escapes archive");
-            }
+            "" | "." | ".." => (),
             _ => {
                 safe_relative(part)?;
-                parts.push(part.into());
             }
         }
     }
-    ensure!(!parts.is_empty(), "Symbolic link targets archive root");
-    Ok(parts.iter().collect())
+    // Preserve .. until alias resolution. Collapsing it first would disagree
+    // with the OS when an earlier path component is itself a symbolic link.
+    Ok(name.parent().unwrap_or(Path::new("")).join(target))
 }
 
 pub fn extract(
@@ -178,6 +169,7 @@ pub fn extract(
         .collect();
     let mut resolved_links = Vec::new();
     for (name, target, resolved) in &links {
+        ensure!(!cancel.load(Ordering::Relaxed), "Deployment cancelled");
         for ancestor in name.ancestors().skip(1) {
             ensure!(
                 !kinds.get(ancestor).is_some_and(|k| k.is_symlink()),
@@ -188,7 +180,7 @@ pub fn extract(
             !staging.join(name).exists(),
             "Symbolic link collides with a directory"
         );
-        let endpoint = resolve_links(resolved, &link_map, 0)?;
+        let endpoint = resolve_links(resolved, &link_map, staging, 0)?;
         ensure!(
             staging.join(&endpoint).exists(),
             "Symbolic link points to missing entry"
@@ -196,6 +188,7 @@ pub fn extract(
         resolved_links.push((name, target, endpoint));
     }
     for (name, target, resolved) in resolved_links {
+        ensure!(!cancel.load(Ordering::Relaxed), "Deployment cancelled");
         make_link(
             Path::new(&target),
             &staging.join(name),
@@ -319,21 +312,43 @@ fn preflight(path: &Path, cancel: &Arc<AtomicBool>) -> Result<()> {
     Ok(())
 }
 
-fn resolve_links(path: &Path, links: &HashMap<PathBuf, PathBuf>, depth: usize) -> Result<PathBuf> {
+fn resolve_links(
+    path: &Path,
+    links: &HashMap<PathBuf, PathBuf>,
+    staging: &Path,
+    depth: usize,
+) -> Result<PathBuf> {
     ensure!(depth < 40, "Symbolic link cycle or excessive chain");
     let components: Vec<_> = path.iter().collect();
     let mut prefix = PathBuf::new();
     for (index, part) in components.iter().enumerate() {
+        if *part == std::ffi::OsStr::new("..") {
+            ensure!(prefix.pop(), "Symbolic link escapes archive");
+            continue;
+        }
+        if *part == std::ffi::OsStr::new(".") {
+            continue;
+        }
         prefix.push(part);
         if let Some(target) = links.get(&prefix) {
             let mut substituted = target.clone();
             for tail in &components[index + 1..] {
                 substituted.push(tail);
             }
-            return resolve_links(&substituted, links, depth + 1);
+            return resolve_links(&substituted, links, staging, depth + 1);
+        }
+        if index + 1 < components.len() {
+            ensure!(
+                staging.join(&prefix).is_dir(),
+                "Symbolic link traverses a missing or non-directory entry"
+            );
         }
     }
-    Ok(path.to_owned())
+    ensure!(
+        !prefix.as_os_str().is_empty(),
+        "Symbolic link targets archive root"
+    );
+    Ok(prefix)
 }
 
 fn set_mode(path: &Path, mode: u32) -> Result<()> {

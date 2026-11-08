@@ -60,31 +60,39 @@ namespace Fleab.Publisher
         static string NormalizeLink(string name, string link)
         {
             if (string.IsNullOrEmpty(link) || link.StartsWith("/", StringComparison.Ordinal) || link.Contains('\\') || link.Contains(':')) throw new IOException("Unsafe symbolic link: " + name);
-            var parts = name.Split('/').Take(name.Split('/').Length - 1).ToList();
             foreach (string part in link.Split('/'))
             {
-                if (part == "" || part == ".") continue;
-                if (part == "..") { if (parts.Count == 0) throw new IOException("Symbolic link escapes archive."); parts.RemoveAt(parts.Count - 1); }
-                else { ValidateName(part); parts.Add(part); }
+                if (part != "" && part != "." && part != "..") ValidateName(part);
             }
-            if (parts.Count == 0) throw new IOException("Symbolic link targets archive root.");
-            return string.Join("/", parts);
+            string parent = string.Join("/", name.Split('/').Take(name.Split('/').Length - 1));
+            return parent.Length == 0 ? link : parent + "/" + link;
         }
         static string ResolveLinks(string path, Dictionary<string, Entry> names, int depth)
         {
             if (depth >= 40) throw new IOException("Symbolic link cycle or excessive chain.");
             string[] parts = path.Split('/');
-            for (int n = 1; n <= parts.Length; n++)
+            var resolved = new List<string>();
+            for (int i = 0; i < parts.Length; i++)
             {
-                string prefix = string.Join("/", parts.Take(n));
+                if (parts[i] == "" || parts[i] == ".") continue;
+                if (parts[i] == "..")
+                {
+                    if (resolved.Count == 0) throw new IOException("Symbolic link escapes archive.");
+                    resolved.RemoveAt(resolved.Count-1); continue;
+                }
+                resolved.Add(parts[i]);
+                string prefix = string.Join("/", resolved);
                 if (names.TryGetValue(prefix, out Entry entry) && entry.Link != null)
                 {
                     string substituted = NormalizeLink(entry.Name, entry.Link);
-                    if (n < parts.Length) substituted += "/" + string.Join("/", parts.Skip(n));
+                    if (i+1 < parts.Length) substituted += "/" + string.Join("/", parts.Skip(i+1));
                     return ResolveLinks(substituted, names, depth + 1);
                 }
+                if (i+1 < parts.Length && (!names.TryGetValue(prefix, out Entry directory) || !directory.Directory) && !names.Keys.Any(n => n.StartsWith(prefix + "/", StringComparison.Ordinal)))
+                    throw new IOException("Symbolic link traverses a missing or non-directory entry.");
             }
-            return path;
+            if (resolved.Count == 0) throw new IOException("Symbolic link targets archive root.");
+            return string.Join("/", resolved);
         }
 
         public static void Create(BuildRecord record, string archive, Action<string, float> progress = null)
@@ -95,6 +103,7 @@ namespace Fleab.Publisher
             {
                 using (var zstd = new CompressionStream(output, 3, leaveOpen: true))
                 {
+                    zstd.SetParameter(ZstdSharp.Unsafe.ZSTD_cParameter.ZSTD_c_checksumFlag, 1);
                     int index = 0;
                     foreach (Entry e in entries)
                     {

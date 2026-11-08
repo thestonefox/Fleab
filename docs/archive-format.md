@@ -42,7 +42,9 @@ owner rwx for staging. When the publisher runs on Windows, known entry points,
 `.so` libraries and `Contents/MacOS` files receive 0755, other files 0644.
 On Unix, file modes are preserved. Symlink payloads are never dereferenced.
 
-Publisher compression level is 3. The Deployer accepts standard Zstandard
+Publisher compression level is 3 with the Zstandard content checksum enabled
+to detect accidental payload corruption. This is not authentication or a
+cryptographic signature. The Deployer accepts standard Zstandard
 compression levels. Compression settings are not encoded in filenames.
 Publishers validate compressed output and copy to a unique `.partial` file,
 flush it, and rename without overwrite. Discovery accepts only complete names.

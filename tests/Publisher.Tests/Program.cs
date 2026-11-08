@@ -31,6 +31,8 @@ try
     if (fixtures != null) { Directory.CreateDirectory(fixtures); File.Copy(first, Path.Combine(fixtures, record.ArchiveName), true); }
     string bad = Path.Combine(root, "corrupt.zst"); File.WriteAllBytes(bad, File.ReadAllBytes(first).Take(20).ToArray());
     Fails(() => TarZstd.Validate(bad), "Truncated compressed archive rejected");
+    var changed = File.ReadAllBytes(first); changed[changed.Length - 1] ^= 1; File.WriteAllBytes(bad, changed);
+    Fails(() => TarZstd.Validate(bad), "Zstandard content checksum detects corruption");
     Fails(() => ArchivePublisher.Publish(record, output), "Publishing inside build output rejected");
     Check(File.Exists(exe) && File.Exists(Path.Combine(output, "unrelated.txt")), "Publishing failure preserves original output");
     Fails(() => TarZstd.ValidateName("../escape"), "Traversal rejected");

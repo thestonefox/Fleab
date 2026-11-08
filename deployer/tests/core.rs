@@ -370,6 +370,27 @@ fn truncated_frames_are_rejected_even_after_tar_end() {
     );
 }
 
+#[test]
+fn publisher_content_checksum_rejects_corruption() {
+    let root = temp();
+    let mut data = fs::read(fixture()).unwrap();
+    let last = data.len() - 1;
+    data[last] ^= 1;
+    let path = root.path().join("corrupt.tar.zst");
+    fs::write(&path, data).unwrap();
+    let stage = root.path().join("stage");
+    fs::create_dir(&stage).unwrap();
+    assert!(
+        archives::extract(
+            &path,
+            &stage,
+            &Arc::new(AtomicBool::new(false)),
+            &mut |_| {}
+        )
+        .is_err()
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn modes_and_internal_symlinks_survive() {
