@@ -20,6 +20,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 walkdir = "2"
 zstd = "0.13"
 fs2 = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[build-dependencies]
+winresource = "0.1"
 
 [dev-dependencies]
 

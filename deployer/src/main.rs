@@ -1,19 +1,24 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() -> eframe::Result {
+    let icon = image::load_from_memory(include_bytes!("../../assets/fleab.png"))
+        .expect("Bundled application icon")
+        .into_rgba8();
+    let (width, height) = icon.dimensions();
+    let options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default()
+            .with_inner_size([700.0, 490.0])
+            .with_min_inner_size([480.0, 390.0])
+            .with_icon(eframe::egui::IconData {
+                rgba: icon.into_raw(),
+                width,
+                height,
+            }),
+        ..Default::default()
+    };
     eframe::run_native(
         "Fleab",
-        eframe::NativeOptions::default(),
-        Box::new(|_| Ok(Box::new(Foundation))),
+        options,
+        Box::new(|cc| Ok(Box::new(fleab::app::FleabApp::new(&cc.egui_ctx)))),
     )
-}
-
-struct Foundation;
-impl eframe::App for Foundation {
-    fn update(&mut self, ctx: &eframe::egui::Context, _: &mut eframe::Frame) {
-        eframe::egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Fleab");
-            ui.label("Build it. Hop it. Play it.");
-        });
-    }
 }

@@ -1,3 +1,4 @@
+pub mod app;
 pub mod archives;
 pub mod deployment;
 pub mod launching;
