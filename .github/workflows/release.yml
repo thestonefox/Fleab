@@ -3,6 +3,10 @@ on:
   push:
     tags: ['v*']
   workflow_call:
+    secrets:
+      FLEAB_UPDATE_PRIVATE_KEY:
+        description: Ed25519 update-signing private key
+        required: true
     inputs:
       tag:
         description: Immutable stable tag to build and publish
@@ -56,6 +60,7 @@ jobs:
             dist/*.zip
             dist/*.tar.gz
             dist/*.sha256
+            dist/*-update-*.tar.gz.json
           if-no-files-found: error
   publish:
     needs: build
@@ -71,6 +76,13 @@ jobs:
           pattern: release-${{ env.RELEASE_TAG }}-*
           path: release
           merge-multiple: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Sign verified update packages
+        env:
+          FLEAB_UPDATE_PRIVATE_KEY: ${{ secrets.FLEAB_UPDATE_PRIVATE_KEY }}
+        run: node tools/update-feed.mjs sign release "$RELEASE_TAG"
       - name: Create release with portable artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,9 +90,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          assets=(release/*.zip release/*.tar.gz release/*.sha256 release/fleab-update.json)
           if gh release view "$RELEASE_TAG" --json isDraft > release-state.json 2> release-state.err; then
             if python -c 'import json; raise SystemExit(0 if json.load(open("release-state.json"))["isDraft"] else 1)'; then
-              gh release upload "$RELEASE_TAG" release/* --clobber
+              gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
             else
               echo "Release $RELEASE_TAG is already published; keeping its assets."
               exit 0
@@ -89,9 +102,9 @@ jobs:
             # Do not mistake authentication/network errors for a missing release.
             gh api "repos/$GH_REPO/releases?per_page=1" > /dev/null
             if [ -f .github/release-notes.md ]; then
-              gh release create "$RELEASE_TAG" release/* --draft --verify-tag --notes-file .github/release-notes.md
+              gh release create "$RELEASE_TAG" "${assets[@]}" --draft --verify-tag --notes-file .github/release-notes.md
             else
-              gh release create "$RELEASE_TAG" release/* --draft --verify-tag --generate-notes
+              gh release create "$RELEASE_TAG" "${assets[@]}" --draft --verify-tag --generate-notes
             fi
           fi
           release_id=$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)
