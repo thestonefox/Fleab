@@ -24,7 +24,7 @@ impl FleabApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.set_max_width(ui.available_width().min(860.0));
-                    let busy = self.worker.is_some();
+                    let busy = self.worker.is_some() || self.updates.busy();
                     ui.horizontal(|ui| {
                         let width = (ui.available_width() - 48.0).max(200.0);
                         ui.allocate_ui_with_layout(egui::vec2(width, 66.0), egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -37,6 +37,7 @@ impl FleabApp {
                         }
                     });
                     ui.add_space(12.0);
+                    self.updates.banner(ctx, ui, !busy && !self.read_only, &self.config);
                     if self.config.profiles.is_empty() && !self.read_only {
                         design::card(ui).show(ui, |ui| {
                             ui.set_width(ui.available_width());
@@ -72,7 +73,7 @@ impl FleabApp {
                         }
                         ui.add_space(12.0);
                         ui.label("Published build");
-                        ui.add_enabled_ui(self.worker.is_none() && !self.builds.is_empty(), |ui| {
+                        ui.add_enabled_ui(self.worker.is_none() && !self.updates.busy() && !self.builds.is_empty(), |ui| {
                             egui::ComboBox::from_id_salt("build").width(ui.available_width()).truncate()
                                 .selected_text(self.builds.get(self.selected_build).map(build_label)
                                     .unwrap_or_else(|| "No builds available".into()))
@@ -128,7 +129,7 @@ impl FleabApp {
                     let running = target.is_some_and(|target| self.children.iter().any(|(profile, t, _)| {
                         Some(*profile) == self.config.selected_profile && *t == target
                     }));
-                    let busy = self.worker.is_some();
+                    let busy = self.worker.is_some() || self.updates.busy();
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
                         if design::primary(ui, "Deploy", !busy && target.is_some() && !self.read_only && !running)
@@ -197,6 +198,7 @@ mod tests {
                 worker: None,
                 editor: None,
                 children: Vec::new(),
+                updates: update_view::Updates::default(),
             };
             let mut rectangles = Vec::new();
             for _ in 0..3 {

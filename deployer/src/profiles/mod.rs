@@ -27,7 +27,7 @@ pub enum RunnerKind {
     Proton,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Profile {
     pub id: Uuid,

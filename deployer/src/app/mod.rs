@@ -4,6 +4,7 @@ mod icons;
 mod linux_theme;
 mod main_view;
 mod settings;
+mod update_view;
 use crate::{
     archives::{self, Build, Target},
     deployment::{self, Installed, Progress},
@@ -63,6 +64,7 @@ pub struct FleabApp {
     worker: Option<Worker>,
     editor: Option<settings::Editor>,
     children: Vec<(uuid::Uuid, Target, Child)>,
+    updates: update_view::Updates,
 }
 
 impl FleabApp {
@@ -84,6 +86,7 @@ impl FleabApp {
             worker: None,
             editor: None,
             children: Vec::new(),
+            updates: update_view::Updates::default(),
         };
         let loaded = (|| -> Result<()> {
             let path = profiles::config_path()?;
@@ -118,6 +121,7 @@ impl FleabApp {
         } else {
             app.refresh(ctx);
         }
+        app.updates = update_view::Updates::load();
         app
     }
     fn profile(&self) -> Option<&Profile> {
@@ -177,7 +181,7 @@ impl FleabApp {
         });
     }
     fn refresh(&mut self, ctx: &egui::Context) {
-        if self.worker.is_some() || self.read_only {
+        if self.worker.is_some() || self.read_only || self.updates.active_download() {
             return;
         }
         let Some(profile) = self.profile().cloned() else {
@@ -283,6 +287,9 @@ impl FleabApp {
         }
     }
     fn deploy(&mut self, ctx: &egui::Context) {
+        if self.updates.busy() {
+            return;
+        }
         let Some(profile) = self.profile().cloned() else {
             return;
         };
@@ -311,6 +318,9 @@ impl FleabApp {
         );
     }
     fn launch(&mut self, ctx: &egui::Context, target: Target) {
+        if self.updates.busy() {
+            return;
+        }
         let Some(profile) = self.profile().cloned() else {
             return;
         };
@@ -333,6 +343,14 @@ impl eframe::App for FleabApp {
 
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.poll(ctx);
+        self.updates.tick(ctx, self.read_only);
+        if self.updates.active_download()
+            && !self.updates.restarting
+            && ctx.input(|i| i.viewport().close_requested())
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.updates.cancel();
+        }
         if let Some(worker) = &self.worker {
             ctx.request_repaint_after(std::time::Duration::from_millis(80));
             if worker.deployment && ctx.input(|i| i.viewport().close_requested()) {

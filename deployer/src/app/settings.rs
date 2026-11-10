@@ -6,6 +6,7 @@ use crate::profiles::RunnerKind;
 enum Tab {
     Folders,
     Launch,
+    Updates,
 }
 
 pub(super) struct Editor {
@@ -18,6 +19,28 @@ pub(super) struct Editor {
 }
 
 impl Editor {
+    fn unsaved(&self, config: &Config) -> bool {
+        let mut profile = self.profile.clone();
+        profile.launch.game_arguments = self.game_args.lines().map(str::to_owned).collect();
+        profile.launch.runner_arguments = self.runner_args.lines().map(str::to_owned).collect();
+        profile.destinations.retain(|_, value| !value.is_empty());
+        profile
+            .executable_overrides
+            .retain(|_, value| !value.is_empty());
+        if let Some(saved) = config.profiles.iter().find(|p| p.id == profile.id) {
+            let mut saved = saved.clone();
+            saved.destinations.retain(|_, value| !value.is_empty());
+            saved
+                .executable_overrides
+                .retain(|_, value| !value.is_empty());
+            return profile != saved;
+        }
+        let blank = Profile {
+            id: profile.id,
+            ..Default::default()
+        };
+        profile != blank
+    }
     pub fn new(profile: Profile, existing: bool) -> Self {
         Self {
             game_args: profile.launch.game_arguments.join("\n"),
@@ -79,14 +102,19 @@ impl FleabApp {
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if icons::button(ui, Icon::Back, "Back to builds", true).clicked() {
+                    if icons::button(ui, Icon::Back, "Back to builds", !self.updates.busy())
+                        .clicked()
+                    {
                         action = Some("cancel");
                     }
                     ui.add_space(4.0);
                     ui.heading("Settings");
                 });
                 ui.add_space(4.0);
-                design::caption(ui, "Manage game profiles and deployment folders.");
+                design::caption(
+                    ui,
+                    "Manage profiles, launch options and application updates.",
+                );
             });
         egui::TopBottomPanel::bottom("settings-actions")
             .frame(
@@ -104,6 +132,17 @@ impl FleabApp {
                     ui.add_space(8.0);
                 }
                 ui.horizontal(|ui| {
+                    if editor.tab == Tab::Updates {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add_enabled(!self.updates.busy(), egui::Button::new("Done"))
+                                .clicked()
+                            {
+                                action = Some("cancel");
+                            }
+                        });
+                        return;
+                    }
                     if editor.existing
                         && ui
                             .button("Delete profile")
@@ -127,7 +166,7 @@ impl FleabApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().id_salt("settings-scroll").show(ui, |ui| {
                     ui.set_max_width(ui.available_width().min(860.0));
-                    design::card(ui).show(ui, |ui| {
+                    if editor.tab != Tab::Updates { design::card(ui).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.label("Game profile");
                         egui::ComboBox::from_id_salt("edit-profile").width(ui.available_width()).truncate()
@@ -145,13 +184,19 @@ impl FleabApp {
                                 .on_hover_text("Export this profile as JSON").clicked() { action = Some("export"); }
                         });
                     });
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
+                    ui.add_space(8.0); }
+                    ui.add_enabled_ui(!self.updates.busy(), |ui| { ui.horizontal(|ui| {
                         ui.selectable_value(&mut editor.tab, Tab::Folders, "Profile & folders");
                         ui.selectable_value(&mut editor.tab, Tab::Launch, "Launch options");
-                    });
+                        ui.selectable_value(&mut editor.tab, Tab::Updates, "Updates");
+                    }); });
                     ui.add_space(8.0);
                     match editor.tab {
+                        Tab::Updates => {
+                            let unsaved = editor.unsaved(&self.config);
+                            if unsaved { design::caption(ui, "Save or cancel your profile changes before installing an update."); }
+                            self.updates.settings(ctx, ui, !self.read_only && self.worker.is_none() && !unsaved, &self.config);
+                        }
                         Tab::Folders => {
                             design::card(ui).show(ui, |ui| {
                                 ui.set_width(ui.available_width());
@@ -308,14 +353,14 @@ impl FleabApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn text_bounds(shape: &egui::epaint::Shape, found: &mut Vec<egui::Rect>) {
+    fn text_bounds(shape: &egui::epaint::Shape, label: &str, found: &mut Vec<egui::Rect>) {
         match shape {
-            egui::epaint::Shape::Text(text) if text.galley.text() == "Save profile" => {
+            egui::epaint::Shape::Text(text) if text.galley.text() == label => {
                 found.push(egui::Rect::from_min_size(text.pos, text.galley.size()))
             }
             egui::epaint::Shape::Vec(shapes) => {
                 for shape in shapes {
-                    text_bounds(shape, found);
+                    text_bounds(shape, label, found);
                 }
             }
             _ => (),
@@ -343,6 +388,7 @@ mod tests {
                 worker: None,
                 editor: Some(Editor::new(Profile::default(), true)),
                 children: Vec::new(),
+                updates: update_view::Updates::default(),
             };
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
             // egui windows settle their auto-size on a second layout pass.
@@ -360,7 +406,7 @@ mod tests {
                 bounds.clear();
                 controls.clear();
                 for shape in &output.shapes {
-                    text_bounds(&shape.shape, &mut bounds);
+                    text_bounds(&shape.shape, "Save profile", &mut bounds);
                     if let egui::Shape::Rect(rect) = &shape.shape {
                         controls.push(rect.rect);
                     }
@@ -377,6 +423,75 @@ mod tests {
                     .all(|r| r.left() >= -0.5 && r.right() <= screen.right() + 0.5),
                 "Settings controls extend past {screen:?}: {controls:?}"
             );
+        }
+    }
+
+    #[test]
+    fn empty_destination_fields_do_not_block_application_updates() {
+        let profile = Profile::default();
+        let config = Config {
+            schema_version: 1,
+            profiles: vec![profile.clone()],
+            selected_profile: Some(profile.id),
+        };
+        let mut editor = Editor::new(profile, true);
+        for target in Target::ALL {
+            editor.profile.destinations.entry(target).or_default();
+            editor
+                .profile
+                .executable_overrides
+                .entry(target)
+                .or_default();
+        }
+        assert!(!editor.unsaved(&config));
+        editor.profile.source = "a changed source".into();
+        assert!(editor.unsaved(&config));
+        assert!(!Editor::new(Profile::default(), false).unsaved(&Config::default()));
+    }
+
+    #[test]
+    fn updates_page_has_a_visible_done_action_without_a_profile() {
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let ctx = egui::Context::default();
+            design::install(&ctx);
+            let mut editor = Editor::new(Profile::default(), false);
+            editor.tab = Tab::Updates;
+            let mut app = FleabApp {
+                config: Config::default(),
+                config_path: None,
+                _config_lock: None,
+                read_only: false,
+                builds: Vec::new(),
+                selected_build: 0,
+                targets: BTreeMap::new(),
+                runners: Vec::new(),
+                status: String::new(),
+                error: false,
+                worker: None,
+                editor: Some(editor),
+                children: Vec::new(),
+                updates: update_view::Updates::default(),
+            };
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(480.0, 390.0));
+            let mut done = Vec::new();
+            for _ in 0..3 {
+                let output = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(screen),
+                        system_theme: Some(theme),
+                        ..Default::default()
+                    },
+                    |ctx| app.settings(ctx),
+                );
+                done.clear();
+                for shape in output.shapes {
+                    text_bounds(&shape.shape, "Done", &mut done);
+                    if let egui::Shape::Rect(rect) = shape.shape {
+                        assert!(rect.rect.right() <= screen.right() + 0.5);
+                    }
+                }
+            }
+            assert!(!done.is_empty() && done.iter().all(|r| screen.contains_rect(*r)));
         }
     }
 }
