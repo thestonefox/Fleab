@@ -4,3 +4,4 @@ pub mod deployment;
 pub mod launching;
 pub mod platform;
 pub mod profiles;
+pub mod updates;
