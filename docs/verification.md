@@ -140,6 +140,51 @@ being reported only as zero detected candidates. Artifact upload/download
 actions have been updated to their maintained Node runtime versions. The
 macOS Intel correction still requires the next hosted run for confirmation.
 
+## Desktop updater checks (10 November 2026)
+
+The updater adds daily and manual GitHub checks, explicit installation consent,
+Ed25519-authenticated packages, native executable replacement and startup
+rollback. Local checks passed:
+
+* Windows x64: 36 ordinary Rust tests; strict Clippy and formatting checks;
+  release build. The separate live HTTPS test read public GitHub metadata
+  without credentials. Network and GUI acceptance tests remain opt-in.
+* Native Linux x64 under WSL: 38 Rust tests on a native temporary filesystem,
+  including archive modes/symlinks, signature and extraction failures,
+  interrupted replacement and rollback. Strict Clippy passed.
+* Three Node tests verify exact Ed25519 payload authentication, all six package
+  targets, corruption/missing packages, wrong keys and unstable versions.
+  All 19 existing semantic-release tests and actionlint passed.
+* The actual Windows packager generated both the complete portable ZIP and
+  dedicated USTAR updater archive, with hashes and dependency license texts.
+* The committed hidden Sandbox harness passed the ordinary Windows tests,
+  portable GUI startup and a real signed update from a development 0.1.0 app
+  to a separately built 0.1.1 app. A signed package with a deliberately wrong
+  embedded version failed startup verification, restored the old executable
+  and restarted it. Both cases preserved profile bytes and a saved-game file;
+  the successful case retained its backup. No host desktop windows were used.
+
+The harness uses isolated per-run inputs, a bounded process wait, retained
+Windows process handles and separate output/error files. The expected stderr
+from the deliberately failing app is diagnostic output; its successful
+rollback must still pass the acceptance test.
+
+The update tests include signature tampering, unknown keys, unsafe download
+hosts, traversal, symlinks, duplicate paths, oversized data, corrupt gzip tails,
+wrong executable digests, unrelated replacement files and corrupt backups.
+Small-window layout checks cover Updates in both system themes.
+The actual Updates page was rendered in hidden Sandbox in light and dark mode;
+networking was disabled, which also exercised the non-blocking failed-check UI.
+
+Only the public signing key is tracked. The private PEM remains ignored and
+is not copied to Sandbox. GitHub credentials were unavailable locally; the
+repository's `FLEAB_UPDATE_PRIVATE_KEY` Actions secret still needs configuration
+before publishing the first updater-enabled release. No update was published.
+
+Native macOS bundle replacement, Windows/Linux ARM64 and hosted publication
+still need their configured environments. Local Windows testing does not
+establish macOS Gatekeeper/notarisation behavior or power-loss durability.
+
 ## Known operational limits
 
 Process visibility is OS-dependent, especially under Wine/Proton wrappers;

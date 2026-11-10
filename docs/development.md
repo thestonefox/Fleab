@@ -79,6 +79,17 @@ The guest shuts itself down; the script has an explicit guest-user guard.
 Results are written under `.tools/sandbox-results-*/`. GUI smoke establishes
 startup, not interaction correctness or visual layout.
 
+The optional `-UpdaterFixtures PATH` runs the guarded desktop updater acceptance
+test in Sandbox too. `PATH/good` and `PATH/broken` must each contain an
+authenticated `fleab-update.json` and `update.tar.gz`, signed by the locally
+embedded key for a version newer than the release executable. The good package
+contains a real app built with that newer version. The broken package contains
+an executable with a different embedded version, so startup verification must
+fail after replacement and trigger rollback. Pass only these fixture artifacts;
+the launcher copies no private signing keys. The test never runs on the host.
+Its reports assert unchanged profile bytes and a saved-game fixture in both
+cases. `FLEAB_UPDATE_PRIVATE_KEY` is unnecessary inside Sandbox.
+
 ## Automation and releases
 
 `ci.yml` validates both architectures on all three operating systems using
@@ -130,6 +141,8 @@ before allowing them. Preserve the installed marker inside the renamed tree;
 separately saving a config flag is not an atomic installation commit. Never
 remove an unowned destination or infer success from a selected archive.
 
-Do not add web repositories, accounts, services, auto-deploy/watchers, retention,
-self-updates or queues. Additional features require explicit agreement.
+Game builds come from filesystem folders and shares. Desktop self-updates use
+only the fixed GitHub release feed described in [application updates](updates.md).
+Do not add other web repositories, accounts, services, automatic game deployment,
+watchers, game retention or queues without explicit agreement.
 
