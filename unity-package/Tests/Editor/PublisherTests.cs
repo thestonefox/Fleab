@@ -1,11 +1,32 @@
 using System;
 using System.IO;
 using NUnit.Framework;
+using UnityEditor;
+using UnityEngine;
 
 namespace Fleab.Publisher.Tests
 {
     public sealed class PublisherTests
     {
+        [TestCase(360)]
+        [TestCase(830)]
+        [TestCase(1600)]
+        public void PublishingFolderControlsStayInOneLine(float windowWidth)
+        {
+            // A tall available area must not turn the icon button into a tall column.
+            var available = new Rect(16, 100, windowWidth - 32, 400);
+            SettingsWindow.PublishFolderRects(available, out var field, out var button, out var icon);
+            Assert.That(field.width, Is.GreaterThan(0));
+            Assert.That(field.xMax, Is.LessThan(button.xMin));
+            Assert.That(button.xMax, Is.LessThanOrEqualTo(available.xMax));
+            Assert.That(field.yMin, Is.EqualTo(button.yMin));
+            Assert.That(field.yMax, Is.LessThanOrEqualTo(available.yMin + EditorGUIUtility.singleLineHeight));
+            Assert.That(button.yMax, Is.LessThanOrEqualTo(available.yMin + EditorGUIUtility.singleLineHeight));
+            Assert.That(button.Contains(icon.min) && button.Contains(icon.max), Is.True);
+            Assert.That(icon.width, Is.LessThanOrEqualTo(16));
+            Assert.That(icon.height, Is.LessThanOrEqualTo(16));
+        }
+
         [TestCase("My_Game", "My%5FGame")]
         [TestCase("v1 β", "v1%20%CE%B2")]
         public void NamesAreUnambiguous(string input, string expected)

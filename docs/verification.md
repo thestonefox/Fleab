@@ -1,5 +1,20 @@
 # Verification record
 
+## Unity publisher folder picker — 10 November 2026
+
+The released settings window allowed the folder icon's intrinsic texture size to
+expand the publish-folder row into a tall column. The fix reserves a single
+editor line, positions the text field and browse button explicitly, and scales
+the icon into a rectangle no larger than 16 × 16 editor units.
+
+Unity 6000.6.8f1 passed nine editor tests in hidden batch mode (one expensive
+build test skipped). Three layout regression cases check 360, 830 and 1600-unit
+window widths with a tall available area: the field and button stay on one line,
+do not overlap, and contain the icon. These are geometry checks; a new interactive
+window screenshot was not captured on the host desktop.
+
+## Baseline verification — 8 November 2026
+
 Local verification on 8 November 2026. These results distinguish executed
 checks from automation and hardware checks that remain outstanding.
 
