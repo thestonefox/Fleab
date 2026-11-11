@@ -54,6 +54,8 @@ jobs:
     # GITHUB_TOKEN tag pushes cannot trigger another push workflow. Call the
     # same reusable build workflow explicitly without requiring a PAT.
     uses: ./.github/workflows/release.yml
+    secrets:
+      FLEAB_UPDATE_PRIVATE_KEY: ${{ secrets.FLEAB_UPDATE_PRIVATE_KEY }}
     with:
       tag: ${{ matrix.tag }}
   continue:

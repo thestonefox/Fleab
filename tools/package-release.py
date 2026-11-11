@@ -7,18 +7,20 @@ import shutil
 import subprocess
 import tarfile
 import zipfile
+import hashlib
 
 p = argparse.ArgumentParser()
 p.add_argument("--platform", required=True, choices=["windows", "linux", "macos"])
 p.add_argument("--arch", required=True, choices=["x64", "arm64"])
 p.add_argument("--target", default="")
+p.add_argument("--output-dir", default="", help="Isolated packaging output directory (default: dist)")
 args = p.parse_args()
 repo = Path(__file__).resolve().parent.parent
 meta = json.loads(subprocess.check_output(["cargo", "metadata", "--locked", "--format-version", "1"], cwd=repo))
 package = next(v for v in meta["packages"] if v["name"] == "fleab")
 version = package["version"]
 name = f"Fleab-{version}-{args.platform}-{args.arch}"
-dist = repo / "dist"
+dist = Path(args.output_dir).resolve() if args.output_dir else repo / "dist"
 dist.mkdir(exist_ok=True)
 stage = dist / name
 if stage.exists():
@@ -46,6 +48,7 @@ if args.platform != "windows":
 for file in ["README.md", "LICENSE"]:
     shutil.copy2(repo / file, stage)
 shutil.copytree(repo / "docs", stage / "docs")
+shutil.copytree(repo / "assets", stage / "assets")
 notices = ["# Fleab dependency notices", "", "Includes transitive and target-specific dependencies. See the bundled license texts.", ""]
 for dep in sorted(meta["packages"], key=lambda v: (v["name"], v["version"])):
     if dep["name"] == "fleab":
@@ -59,6 +62,8 @@ for dep in sorted(meta["packages"], key=lambda v: (v["name"], v["version"])):
             shutil.copy2(file, dest)
 (stage / "THIRD_PARTY_NOTICES.md").write_text("\n".join(notices) + "\n", encoding="utf-8")
 if args.platform == "macos":
+    shutil.copytree(stage / "licenses", resources / "licenses")
+    shutil.copy2(stage / "THIRD_PARTY_NOTICES.md", resources)
     subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(stage / "Fleab.app")], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(stage / "Fleab.app")], check=True)
 if args.platform == "windows":
@@ -71,7 +76,28 @@ else:
     archive = dist / f"{name}.tar.gz"
     with tarfile.open(archive, "w:gz") as t:
         t.add(stage, arcname=name)
-import hashlib
 digest = hashlib.sha256(archive.read_bytes()).hexdigest()
 archive.with_suffix(archive.suffix + ".sha256").write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+
+# Updater archives use a deliberately small, link-free USTAR layout. They carry
+# their license texts as well as the binary; the updater retains this package.
+update = dist / f"Fleab-{version}-update-{args.platform}-{args.arch}.tar.gz"
+with tarfile.open(update, "w:gz", format=tarfile.USTAR_FORMAT) as t:
+    application = stage / ("Fleab.app" if args.platform == "macos" else exe)
+    t.add(application, arcname=application.name)
+    for item in ["LICENSE", "THIRD_PARTY_NOTICES.md", "licenses"]:
+        t.add(stage / item, arcname=item)
+with tarfile.open(update, "r:gz") as t:
+    members = t.getmembers()
+    if any(not m.isfile() and not m.isdir() for m in members):
+        raise SystemExit("Updater archives must not contain links or special entries")
+    unpacked = sum(m.size for m in members)
+update_metadata = {
+    "filename": update.name,
+    "size": update.stat().st_size,
+    "sha256": hashlib.sha256(update.read_bytes()).hexdigest(),
+    "executable_sha256": hashlib.sha256((binary_dir / exe).read_bytes()).hexdigest(),
+    "unpacked_size": unpacked,
+}
+update.with_suffix(update.suffix + ".json").write_text(json.dumps(update_metadata) + "\n", encoding="utf-8")
 print(archive)

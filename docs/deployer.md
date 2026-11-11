@@ -107,6 +107,15 @@ deploying. OS file locks remain an additional check on Windows. Fleab cannot
 eliminate races with external programs starting a game during replacement or
 another privileged program changing filesystem links concurrently.
 
+## Application updates
+
+Open the settings cog and select **Updates** to check GitHub Releases or turn
+daily background checks off. A newer signed release offers **Download and
+restart** when deployment is idle and profile edits are saved. Installation
+keeps profiles and game files, retains a backup, and rolls back if the new app
+cannot finish starting. See [application updates](updates.md) for recovery,
+portable installation requirements and the first manual upgrade.
+
 ## System requirements
 
 Windows x64 and ARM64 builds statically link the C/C++ runtime. Standard Windows

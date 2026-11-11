@@ -1,4 +1,5 @@
 # Runs only INSIDE Windows Sandbox, never on the development computer.
+param([int]$TestUpdater = 0)
 $ErrorActionPreference = 'Stop'
 if ($env:USERNAME -ne 'WDAGUtilityAccount') { throw 'This script must run inside Windows Sandbox.' }
 $result = @{ passed = $false; details = @() }
@@ -25,6 +26,15 @@ try {
     if ($app.HasExited) { throw "Portable GUI exited unexpectedly: $($app.ExitCode)" }
     $result.details += 'Portable GUI started without installed Rust or .NET'
     Stop-Process -Id $app.Id
+    if ($TestUpdater) {
+        $updateTest = Start-Process C:\FleabInput\updater_acceptance.exe -ArgumentList '--ignored','--nocapture' -PassThru -RedirectStandardOutput C:\FleabResults\updater-tests.txt -RedirectStandardError C:\FleabResults\updater-errors.txt
+        # Retain the native handle before exit; Windows PowerShell otherwise
+        # sometimes returns a null ExitCode for short-lived redirected children.
+        $updateHandle = $updateTest.Handle
+        if (!$updateTest.WaitForExit(180000)) { throw 'Desktop update/recovery acceptance timed out' }
+        if ($updateTest.ExitCode -ne 0) { throw 'Desktop update/recovery acceptance failed' }
+        $result.details += 'Signed update restarted; failed startup restored original app; profiles and games preserved'
+    }
     $result.passed = $true
 } catch { $result.error = $_.Exception.ToString() }
 finally {

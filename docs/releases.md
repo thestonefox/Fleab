@@ -96,13 +96,20 @@ more remain. A failed batch stops rather than repeatedly consuming build time.
 
 ## Builds and publication
 
+Before publishing an updater-enabled release, add the matching Ed25519 PEM as
+the repository Actions secret **FLEAB_UPDATE_PRIVATE_KEY**. Its public key is
+embedded in the desktop app. See [signing setup and recovery](updates.md).
+The private key must remain stable across releases; keep an offline backup.
+
 The automation calls the existing reusable six-platform release workflow
 directly. This is necessary because a `GITHUB_TOKEN` tag push does not trigger
 another push workflow. No personal access token, GitHub App, central service or
 release PR approval is required.
 
 Each release builds/tests Windows, Linux and macOS on x64/ARM64, packages the
-portable artifacts and SHA-256 files, and uploads assets to a draft. Only after
+portable artifacts, SHA-256 files and dedicated updater archives, and uploads
+assets to a draft. The publishing job authenticates the six updater archives
+and signs `fleab-update.json` with the repository secret. Only after
 all six builds and asset uploads succeed does it publish the release. Artifact
 names include the version to isolate concurrent catch-up builds. An incomplete
 draft can be resumed; already published assets are preserved. GitHub's semantic

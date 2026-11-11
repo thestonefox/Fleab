@@ -55,6 +55,7 @@ different paths on different machines.
 - [Folders and profiles](docs/profiles.md) — shared folders, example setups and upgrades.
 - [Unity publisher](docs/publisher.md) — configuration, manual publishing and retries.
 - [Desktop app](docs/deployer.md) — deployment, launch options and system requirements.
+- [Application updates](docs/updates.md) — GitHub release checks and signed updates.
 - [Wine, Proton and Steam Deck](docs/proton.md).
 - [Development](docs/development.md), [automatic releases](docs/releases.md),
   [archive format](docs/archive-format.md) and [verification status](docs/verification.md).

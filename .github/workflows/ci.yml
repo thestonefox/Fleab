@@ -57,6 +57,7 @@ jobs:
         run: |
           npm ci --prefix tools/release-engine --ignore-scripts --omit=peer
           python -m unittest discover -s tests/release -v
+          node --test tests/updates/feed.test.mjs
       - name: Package portable application
         run: python tools/package-release.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v7
