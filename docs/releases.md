@@ -96,11 +96,11 @@ more remain. A failed batch stops rather than repeatedly consuming build time.
 
 ## Builds and publication
 
-Windows Authenticode signing has a one-time SignPath onboarding step. Once
-enabled, publication pauses for one maintainer approval in SignPath covering
-both Windows architectures. The completed request job's Summary has the direct
-approval link; the waiting job resumes automatically after approval. This is
-separate from PR review. See the [code signing policy](code-signing.md).
+Windows publisher signing is disabled. Every merged PR builds and publishes
+automatically, with no SignPath account, request or manual signing approval.
+The optional integration is retained for future use but must be re-enabled
+through a reviewed workflow change after obtaining a production certificate.
+See the [code signing policy](code-signing.md).
 
 Before publishing an updater-enabled release, add the matching Ed25519 PEM as
 the repository Actions secret **FLEAB_UPDATE_PRIVATE_KEY**. Its public key is

@@ -225,6 +225,19 @@ ARM64 signature checks therefore require onboarding and the first hosted run.
 Before onboarding, releases explicitly remain unsigned. After enabling the
 integration, production signatures are mandatory and failures stop publication.
 
+## Publisher signing deferred (11 November 2026)
+
+Following the Foundation application rejection, Windows publisher signing is
+explicitly disabled in the release workflow. The `WINDOWS_SIGNING_ENABLED`
+repository variable is no longer read, so an old setting cannot activate
+requests or approvals. The optional code and tests remain available for a
+future reviewed change after a production certificate is obtained.
+
+The actual release preflight succeeds without a SignPath token or account ID
+and reports `enabled=false`. It still rejects a missing updater verification
+key. actionlint and the existing updater-feed/signing tests pass. This change
+does not alter application code or remove Ed25519 update authentication.
+
 ## Known operational limits
 
 Process visibility is OS-dependent, especially under Wine/Proton wrappers;

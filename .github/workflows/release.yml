@@ -22,6 +22,9 @@ concurrency:
   cancel-in-progress: false
 env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  # Keep optional publisher signing dormant. Re-enable through a reviewed PR
+  # only after a production certificate and signing policy are available.
+  WINDOWS_SIGNING_ENABLED: 'false'
 jobs:
   prepare-signing:
     runs-on: ubuntu-24.04
@@ -32,7 +35,6 @@ jobs:
       - name: Check release and signing configuration
         id: config
         env:
-          WINDOWS_SIGNING_ENABLED: ${{ vars.WINDOWS_SIGNING_ENABLED }}
           SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
           FLEAB_UPDATE_PRIVATE_KEY: ${{ secrets.FLEAB_UPDATE_PRIVATE_KEY }}
@@ -49,7 +51,7 @@ jobs:
               uuid.UUID(os.environ['SIGNPATH_ORGANIZATION_ID'])
               assert os.environ['SIGNPATH_API_TOKEN'], 'Configure SIGNPATH_API_TOKEN before enabling Windows signing'
           else:
-              print('::warning::Windows releases remain unsigned until SignPath onboarding is complete and WINDOWS_SIGNING_ENABLED=true.')
+              print('::notice::Windows publisher signing is disabled; releases publish automatically without SignPath approval.')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'enabled={str(enabled).lower()}\nversion={tag[1:]}\n')
   build:
@@ -300,7 +302,7 @@ jobs:
           fi
           printf '\n\n[Code signing policy](https://github.com/thestonefox/Fleab/blob/%s/docs/code-signing.md)\n' "$RELEASE_TAG" >> release-notes.publish.md
           if [ "$WINDOWS_SIGNING_ENABLED" != 'true' ]; then
-            printf '\nWindows binaries are unsigned while SignPath onboarding is pending.\n' >> release-notes.publish.md
+            printf '\nWindows binaries do not have a publisher signature. Automatic updates retain their separate verification signature.\n' >> release-notes.publish.md
           fi
           if gh release view "$RELEASE_TAG" --json isDraft > release-state.json 2> release-state.err; then
             if python -c 'import json; raise SystemExit(0 if json.load(open("release-state.json"))["isDraft"] else 1)'; then
