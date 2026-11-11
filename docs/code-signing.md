@@ -6,11 +6,20 @@ Its source and build configuration are public in
 
 ## Current status
 
-The SignPath integration is prepared. Production signing requires acceptance
-into the SignPath Foundation programme, an issued certificate and the one-time
-repository setup below. Until that setup is enabled, Windows releases remain
-unsigned and their release notes say so. This policy does not claim that
-existing downloads have a Windows publisher signature.
+Windows publisher signing is disabled. The Foundation application was not
+approved and Fleab is not enrolled. The optional SignPath integration is kept
+for possible future use; no SignPath request or approval is part of normal
+releases. Merge a PR and GitHub builds and publishes the release automatically.
+
+The release workflow explicitly sets `WINDOWS_SIGNING_ENABLED: 'false'`.
+Repository variables cannot enable it. Windows binaries have no publisher
+signature, so Windows may still block or warn about them. The updater's
+separate Ed25519 verification stays enabled and its key must be retained.
+
+No SignPath secrets or variables are needed. If previously added, the
+`SIGNPATH_API_TOKEN` secret and `SIGNPATH_ORGANIZATION_ID` and
+`WINDOWS_SIGNING_ENABLED` repository variables can be removed. Keep
+`FLEAB_UPDATE_PRIVATE_KEY`: it authenticates application updates.
 
 After acceptance, attribution is: Free code signing provided by
 [SignPath.io](https://signpath.io/), certificate by
@@ -20,8 +29,9 @@ in signing must use multi-factor authentication for GitHub and SignPath.
 
 ## Scope and responsibilities
 
-Only Fleab's own Windows x64 and ARM64 executables, built by the public release
-workflow on GitHub-hosted runners, are submitted. The Unity package, other
+If re-enabled, only Fleab's own Windows x64 and ARM64 executables, built by the
+public release workflow on GitHub-hosted runners, would be submitted. The
+Unity package, other
 projects' binaries and users' game builds are outside this signing policy.
 macOS packaging currently uses an ad-hoc signature; Developer ID and
 notarisation are separate requirements.
@@ -33,7 +43,9 @@ requires explicit approval in SignPath, as required by the
 permission to approve its own requests. The SignPath API token is a submitter
 token; it is not an approver credential.
 
-## Routine release flow
+## Optional future signing flow
+
+The following applies only after publisher signing has been re-enabled.
 
 1. Raise a PR and merge it into `main` after its checks pass.
 2. GitHub assigns the SemVer tag and builds all six native targets.
@@ -58,7 +70,10 @@ failed submission job without a second request when its binaries are unchanged.
 Changed binaries, tag or SignPath account cannot reuse that saved identity.
 Rejected/cancelled signing requests fail publication; they are never bypassed.
 
-## One-time setup
+## Re-enabling in the future
+
+Do not perform this setup for normal unsigned releases. A production
+certificate and provider acceptance are prerequisites.
 
 1. Merge this policy and integration so SignPath can inspect them publicly.
 2. Apply at [SignPath Foundation](https://signpath.org/apply). Provide the
@@ -77,8 +92,10 @@ Rejected/cancelled signing requests fail publication; they are never bypassed.
    secret **`SIGNPATH_API_TOKEN`** for a submitter with access to that policy,
    and repository variable **`SIGNPATH_ORGANIZATION_ID`** with the account's UUID.
    The updater's separate **`FLEAB_UPDATE_PRIVATE_KEY`** secret remains required.
-6. Once a production certificate and policy are ready, set repository variable
-   **`WINDOWS_SIGNING_ENABLED`** to **`true`**. Before enabling, releases continue
+6. Once a production certificate and policy are ready, change the release
+   workflow's **`WINDOWS_SIGNING_ENABLED`** value to **`'true'`** in a reviewed PR.
+   A repository variable of that name is not used. Before enabling, releases
+   continue
    with an explicit unsigned-status notice. After enabling, missing settings,
    failed signing or invalid signatures stop publication; there is no automatic
    unsigned fallback. Do not turn signing off merely to bypass a failed request.

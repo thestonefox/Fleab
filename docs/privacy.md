@@ -23,9 +23,10 @@ or release links uses your browser and the destination site's privacy policy.
 
 ## SignPath
 
-SignPath is used by maintainers during release production, not by the running
-desktop app. Build artifacts and source/build provenance are submitted for
-signing. Maintainer account details and approval notifications are handled
+The SignPath release integration is disabled. If re-enabled in the future,
+maintainers would submit build artifacts and source/build provenance for
+signing. The running desktop app never contacts SignPath. Maintainer account
+details and approval notifications are handled
 under [SignPath's privacy policy](https://signpath.io/privacy-policy).
 End users do not need a SignPath account. Windows may independently perform
 certificate, reputation or malware checks according to its security settings.

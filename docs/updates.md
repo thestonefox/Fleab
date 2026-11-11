@@ -54,11 +54,11 @@ macOS packages currently have an ad-hoc code signature. Update signatures
 authenticate Fleab's release payload; they do not replace Developer ID signing,
 notarisation, or the operating system's application trust checks.
 
-Windows publisher signing uses SignPath independently of the updater key.
-After the one-time onboarding, each merged PR builds automatically and waits
-for one SignPath approval before publication. See the
-[code signing policy](code-signing.md) for the direct approval link and retry
-instructions. Existing unsigned releases do not gain a signature retroactively.
+Windows publisher signing is disabled independently of the updater key.
+Releases publish automatically without SignPath approval. The Ed25519 updater
+manifest and package verification remain required; keep the existing
+`FLEAB_UPDATE_PRIVATE_KEY` repository secret. See the
+[code signing policy](code-signing.md) for the dormant optional integration.
 
 ## Maintainer signing setup
 

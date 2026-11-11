@@ -115,11 +115,10 @@ after every build and asset upload succeeds. See `releases.md` for details.
 The repository is [thestonefox/Fleab](https://github.com/thestonefox/Fleab).
 Local builds do not push tags or releases.
 
-Windows publisher signatures are applied through SignPath after native builds.
-One manual approval covers both architectures; the completed request job's
-Summary exposes its direct link while the signing job waits. See the
-[code signing policy](code-signing.md) for setup and timeout recovery. Local
-and ordinary PR builds remain unsigned. Verify the integration without an
+Windows publisher signing is disabled explicitly in the release workflow.
+The optional SignPath integration and checks remain for future use; see the
+[code signing policy](code-signing.md). Normal releases do not submit signing
+requests or wait for approval. Verify the dormant integration without an
 account or signing credentials:
 
 ```sh
