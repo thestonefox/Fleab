@@ -81,7 +81,8 @@ in place. See [configuration storage](deployer.md#storage) for exact paths.
 
 To upgrade Fleab, extract the new portable release and replace the executable or
 `.app`. Keep your configuration and deployment folders. The desktop app does not
-need Rust, .NET, TAR or Zstandard installed, and does not update itself.
+need Rust, .NET, TAR or Zstandard installed. Versions with the updater also
+offer [signed application updates](updates.md) through **Settings > Updates**.
 
 For executable overrides and game arguments, open **Settings > Launch options**.
 Native Windows, Linux and macOS players launch on their matching operating
