@@ -54,6 +54,12 @@ macOS packages currently have an ad-hoc code signature. Update signatures
 authenticate Fleab's release payload; they do not replace Developer ID signing,
 notarisation, or the operating system's application trust checks.
 
+Windows publisher signing uses SignPath independently of the updater key.
+After the one-time onboarding, each merged PR builds automatically and waits
+for one SignPath approval before publication. See the
+[code signing policy](code-signing.md) for the direct approval link and retry
+instructions. Existing unsigned releases do not gain a signature retroactively.
+
 ## Maintainer signing setup
 
 `deployer/update-keys.json` contains public verification keys. The matching

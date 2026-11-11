@@ -115,6 +115,28 @@ after every build and asset upload succeeds. See `releases.md` for details.
 The repository is [thestonefox/Fleab](https://github.com/thestonefox/Fleab).
 Local builds do not push tags or releases.
 
+Windows publisher signatures are applied through SignPath after native builds.
+One manual approval covers both architectures; the completed request job's
+Summary exposes its direct link while the signing job waits. See the
+[code signing policy](code-signing.md) for setup and timeout recovery. Local
+and ordinary PR builds remain unsigned. Verify the integration without an
+account or signing credentials:
+
+```sh
+python -m unittest discover -s tests/signing -v
+```
+
+On Windows, after building the release executable:
+
+```powershell
+./tests/signing/test-windows-verification.ps1 -Executable target/release/fleab.exe -Version 0.1.0 -Architecture x64
+```
+
+Use the actual workspace version and native architecture. This checks the PE
+metadata and verifies that wrong versions, wrong architectures and an unsigned
+executable cannot pass the production signature requirement. Live SignPath
+approval and trusted certificate verification require the configured account.
+
 ## Package a portable release
 
 After building the native release executable, package the matching host target:

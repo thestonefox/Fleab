@@ -185,6 +185,46 @@ Native macOS bundle replacement, Windows/Linux ARM64 and hosted publication
 still need their configured environments. Local Windows testing does not
 establish macOS Gatekeeper/notarisation behavior or power-loss durability.
 
+## Windows publisher signing checks (11 November 2026)
+
+The new signing branch starts from remote main's updater PR merge (`7c0f424`).
+It adds one SignPath request per release for Windows x64 and ARM64. A completed
+request job exposes the approval link before a separate waiting job starts.
+The saved request is reused after a timeout; publication cannot bypass a
+failed signing job when signing is enabled.
+
+Executed locally:
+
+* Eight Python tests cover the actual prepare/record/resume command sequence,
+  unchanged request IDs, altered input binaries/tags/accounts, unsafe approval
+  links, unexpected/missing ZIP entries, duplicate paths, links and corrupt CRCs.
+  An isolated repackaging check verifies that both download formats preserve
+  the returned executable bytes and produce matching updater hashes/notices.
+* The real Windows release executable builds with Fleab product/version and
+  original-filename resources. The PowerShell verifier accepts its matching
+  metadata and rejects the wrong version, wrong CPU and missing signature.
+  No certificate was installed into the host trust store.
+* Actual Windows stage-only and from-stage packaging succeeded using the
+  native executable and complete dependency license texts.
+* Windows strict Clippy, formatting and all 36 ordinary Rust tests pass;
+  the existing 19 semantic-release and three updater-feed tests pass.
+  actionlint passes the updated reusable workflow and secret permissions.
+* The two-executable artifact policy validates against SignPath's current
+  official XML schema. The pinned official PowerShell module imports and
+  exposes the expected download/wait parameters.
+
+The SignPath application is prepared locally with the maintainer's supplied
+contact details. It has not been submitted: the required public signing/privacy
+policy must be merged first, and the application requires the maintainer's
+agreement to the Foundation terms and processing of account details. Those
+contact details are in an ignored local draft, not tracked documentation.
+
+No provider account, production certificate or signing token is available
+yet. Live approval, certificate issuance, GitHub Summary display and native
+ARM64 signature checks therefore require onboarding and the first hosted run.
+Before onboarding, releases explicitly remain unsigned. After enabling the
+integration, production signatures are mandatory and failures stop publication.
+
 ## Known operational limits
 
 Process visibility is OS-dependent, especially under Wine/Proton wrappers;
