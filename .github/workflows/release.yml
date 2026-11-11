@@ -7,6 +7,9 @@ on:
       FLEAB_UPDATE_PRIVATE_KEY:
         description: Ed25519 update-signing private key
         required: true
+      SIGNPATH_API_TOKEN:
+        description: SignPath submitter token (required when Windows signing is enabled)
+        required: false
     inputs:
       tag:
         description: Immutable stable tag to build and publish
@@ -20,7 +23,37 @@ concurrency:
 env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 jobs:
+  prepare-signing:
+    runs-on: ubuntu-24.04
+    outputs:
+      enabled: ${{ steps.config.outputs.enabled }}
+      version: ${{ steps.config.outputs.version }}
+    steps:
+      - name: Check release and signing configuration
+        id: config
+        env:
+          WINDOWS_SIGNING_ENABLED: ${{ vars.WINDOWS_SIGNING_ENABLED }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          FLEAB_UPDATE_PRIVATE_KEY: ${{ secrets.FLEAB_UPDATE_PRIVATE_KEY }}
+        shell: python
+        run: |
+          import os, re, uuid
+          tag = os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', tag), 'Stable release tag required'
+          assert os.environ['FLEAB_UPDATE_PRIVATE_KEY'], 'Configure FLEAB_UPDATE_PRIVATE_KEY before releasing'
+          flag = os.environ['WINDOWS_SIGNING_ENABLED']
+          assert flag in ('', 'false', 'true'), 'WINDOWS_SIGNING_ENABLED must be true or false'
+          enabled = flag == 'true'
+          if enabled:
+              uuid.UUID(os.environ['SIGNPATH_ORGANIZATION_ID'])
+              assert os.environ['SIGNPATH_API_TOKEN'], 'Configure SIGNPATH_API_TOKEN before enabling Windows signing'
+          else:
+              print('::warning::Windows releases remain unsigned until SignPath onboarding is complete and WINDOWS_SIGNING_ENABLED=true.')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'enabled={str(enabled).lower()}\nversion={tag[1:]}\n')
   build:
+    needs: prepare-signing
     strategy:
       fail-fast: false
       matrix:
@@ -52,8 +85,25 @@ jobs:
           assert os.environ['RELEASE_TAG'] == f'v{rust}' and rust == unity
       - run: cargo test --locked --workspace
       - run: cargo build --locked --release
-      - run: python tools/package-release.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
+      - name: Check Windows binary metadata
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/verify-windows-release.ps1 -Executable target/release/fleab.exe -Version $env:RELEASE_TAG -Architecture '${{ matrix.arch }}'
+      - name: Prepare Windows files for signing
+        if: runner.os == 'Windows' && needs.prepare-signing.outputs.enabled == 'true'
+        run: python tools/package-release.py --platform windows --arch ${{ matrix.arch }} --stage-only
+      - name: Upload unsigned Windows stage
+        if: runner.os == 'Windows' && needs.prepare-signing.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-stage-${{ env.RELEASE_TAG }}-windows-${{ matrix.arch }}
+          path: dist/Fleab-${{ needs.prepare-signing.outputs.version }}-windows-${{ matrix.arch }}/
+          if-no-files-found: error
+      - name: Package portable release
+        if: runner.os != 'Windows' || needs.prepare-signing.outputs.enabled != 'true'
+        run: python tools/package-release.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v7
+        if: runner.os != 'Windows' || needs.prepare-signing.outputs.enabled != 'true'
         with:
           name: release-${{ env.RELEASE_TAG }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
@@ -62,8 +112,159 @@ jobs:
             dist/*.sha256
             dist/*-update-*.tar.gz.json
           if-no-files-found: error
+  request-windows-signing:
+    name: Open this job's Summary for the SignPath approval link
+    needs: [prepare-signing, build]
+    if: needs.prepare-signing.outputs.enabled == 'true'
+    runs-on: windows-2025
+    outputs:
+      request-id: ${{ steps.record.outputs.request-id || steps.resume.outputs.request-id }}
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      REQUEST_ARTIFACT: signpath-request-${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-stage-${{ env.RELEASE_TAG }}-windows-x64
+          path: stages/windows-x64
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-stage-${{ env.RELEASE_TAG }}-windows-arm64
+          path: stages/windows-arm64
+      - name: Check both Windows targets before submitting
+        shell: pwsh
+        run: |
+          foreach ($arch in @('x64','arm64')) {
+            ./tools/verify-windows-release.ps1 -Executable "stages/windows-$arch/fleab.exe" -Version $env:RELEASE_TAG -Architecture $arch
+          }
+          python tools/windows-signing.py prepare --stages stages --output signing-input
+      - name: Find saved signing request from this run
+        id: saved
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $pages = gh api --paginate --slurp "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/artifacts?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE) { throw 'Could not find saved signing requests' }
+          $artifact = $pages | ForEach-Object { $_.artifacts } | Where-Object { !$_.expired -and $_.name -eq $env:REQUEST_ARTIFACT } | Select-Object -First 1
+          "artifact-id=$($artifact.id)" >> $env:GITHUB_OUTPUT
+      - uses: actions/download-artifact@v8
+        if: steps.saved.outputs.artifact-id != ''
+        with:
+          artifact-ids: ${{ steps.saved.outputs.artifact-id }}
+          path: pending
+          merge-multiple: true
+      - name: Reuse the original request after a timeout
+        if: steps.saved.outputs.artifact-id != ''
+        id: resume
+        run: python tools/windows-signing.py resume --tag "$env:RELEASE_TAG" --organization "$env:SIGNPATH_ORGANIZATION_ID" --input signing-input --request pending/request.json
+      - name: Upload both unsigned binaries as one artifact
+        if: steps.saved.outputs.artifact-id == ''
+        id: signing-input
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-input-${{ env.RELEASE_TAG }}-${{ github.run_attempt }}
+          path: signing-input/
+          if-no-files-found: error
+      - name: Submit one signing request for this release
+        if: steps.saved.outputs.artifact-id == ''
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: fleab
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: windows-v1
+          github-artifact-id: ${{ steps.signing-input.outputs.artifact-id }}
+          wait-for-completion: false
+          parameters: |
+            version: ${{ toJSON(needs.prepare-signing.outputs.version) }}
+      - name: Show approval link and save request identity
+        if: steps.saved.outputs.artifact-id == ''
+        id: record
+        shell: pwsh
+        env:
+          SIGNING_REQUEST_ID: ${{ steps.signpath.outputs.signing-request-id }}
+          SIGNING_APPROVAL_URL: ${{ steps.signpath.outputs.signing-request-web-url }}
+        run: |
+          New-Item -ItemType Directory -Path pending | Out-Null
+          python tools/windows-signing.py record --tag "$env:RELEASE_TAG" --organization "$env:SIGNPATH_ORGANIZATION_ID" --input signing-input --request pending/request.json --request-id "$env:SIGNING_REQUEST_ID" --url "$env:SIGNING_APPROVAL_URL"
+      - name: Save request so failed jobs can resume
+        if: steps.saved.outputs.artifact-id == ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.REQUEST_ARTIFACT }}
+          path: pending/request.json
+          if-no-files-found: error
+  sign-windows:
+    name: Waiting for your SignPath approval
+    needs: [prepare-signing, build, request-windows-signing]
+    if: needs.prepare-signing.outputs.enabled == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-stage-${{ env.RELEASE_TAG }}-windows-x64
+          path: stages/windows-x64
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-stage-${{ env.RELEASE_TAG }}-windows-arm64
+          path: stages/windows-arm64
+      - name: Install pinned official signing client
+        shell: pwsh
+        run: Install-Module SignPath -RequiredVersion 4.4.6 -Repository PSGallery -Scope CurrentUser -Force
+      - name: WAITING — open the run Summary and approve in SignPath
+        shell: pwsh
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNING_REQUEST_ID: ${{ needs.request-windows-signing.outputs.request-id }}
+        run: |
+          Import-Module SignPath -RequiredVersion 4.4.6
+          Get-SignedArtifact -OrganizationId $env:SIGNPATH_ORGANIZATION_ID -ApiToken $env:SIGNPATH_API_TOKEN -SigningRequestId $env:SIGNING_REQUEST_ID -OutputArtifactPath signed-windows.zip -WaitForCompletionTimeoutInSeconds 18000
+      - name: Verify signed binaries and package the release
+        shell: pwsh
+        run: |
+          python tools/windows-signing.py extract --archive signed-windows.zip --output signed
+          if ($LASTEXITCODE) { throw 'Invalid signing response' }
+          foreach ($arch in @('x64','arm64')) {
+            ./tools/verify-windows-release.ps1 -Executable "signed/windows-$arch/fleab.exe" -Version $env:RELEASE_TAG -Architecture $arch -RequireSignature
+            Copy-Item -LiteralPath "signed/windows-$arch/fleab.exe" -Destination "stages/windows-$arch/fleab.exe"
+            python tools/package-release.py --platform windows --arch $arch --from-stage "stages/windows-$arch"
+            if ($LASTEXITCODE) { throw 'Signed Windows packaging failed' }
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ env.RELEASE_TAG }}-windows-signed
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/*-update-*.tar.gz.json
+          if-no-files-found: error
   publish:
-    needs: build
+    needs: [prepare-signing, build, sign-windows]
+    if: always() && needs.build.result == 'success' && (needs.sign-windows.result == 'success' || (needs.prepare-signing.outputs.enabled != 'true' && needs.sign-windows.result == 'skipped'))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -87,13 +288,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          WINDOWS_SIGNING_ENABLED: ${{ needs.prepare-signing.outputs.enabled }}
         shell: bash
         run: |
           set -euo pipefail
           assets=(release/*.zip release/*.tar.gz release/*.sha256 release/fleab-update.json)
+          if [ -f .github/release-notes.md ]; then
+            cp .github/release-notes.md release-notes.publish.md
+          else
+            gh api --method POST "repos/$GH_REPO/releases/generate-notes" -f tag_name="$RELEASE_TAG" --jq .body > release-notes.publish.md
+          fi
+          printf '\n\n[Code signing policy](https://github.com/thestonefox/Fleab/blob/%s/docs/code-signing.md)\n' "$RELEASE_TAG" >> release-notes.publish.md
+          if [ "$WINDOWS_SIGNING_ENABLED" != 'true' ]; then
+            printf '\nWindows binaries are unsigned while SignPath onboarding is pending.\n' >> release-notes.publish.md
+          fi
           if gh release view "$RELEASE_TAG" --json isDraft > release-state.json 2> release-state.err; then
             if python -c 'import json; raise SystemExit(0 if json.load(open("release-state.json"))["isDraft"] else 1)'; then
               gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+              gh release edit "$RELEASE_TAG" --notes-file release-notes.publish.md
             else
               echo "Release $RELEASE_TAG is already published; keeping its assets."
               exit 0
@@ -101,11 +313,7 @@ jobs:
           else
             # Do not mistake authentication/network errors for a missing release.
             gh api "repos/$GH_REPO/releases?per_page=1" > /dev/null
-            if [ -f .github/release-notes.md ]; then
-              gh release create "$RELEASE_TAG" "${assets[@]}" --draft --verify-tag --notes-file .github/release-notes.md
-            else
-              gh release create "$RELEASE_TAG" "${assets[@]}" --draft --verify-tag --generate-notes
-            fi
+            gh release create "$RELEASE_TAG" "${assets[@]}" --draft --verify-tag --notes-file release-notes.publish.md
           fi
           release_id=$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)
           gh api --method PATCH "repos/$GH_REPO/releases/$release_id" -F draft=false -f make_latest=legacy > /dev/null
