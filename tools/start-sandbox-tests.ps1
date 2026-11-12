@@ -13,7 +13,7 @@ foreach ($line in $build) {
     try { $item = $line | ConvertFrom-Json } catch { continue }
     if ($item.reason -ne 'compiler-artifact' -or !$item.executable -or !$item.profile.test) { continue }
     if ($item.target.kind -contains 'lib') { $name = 'unit' }
-    elseif ($item.target.name -in @('core','launch','acceptance','symlinks','updater_acceptance')) { $name = $item.target.name }
+    elseif ($item.target.name -in @('core','launch','acceptance','symlinks','updater_acceptance','tray_acceptance')) { $name = $item.target.name }
     else { continue }
     Copy-Item -LiteralPath $item.executable -Destination (Join-Path $inputDir "$name.exe")
 }
