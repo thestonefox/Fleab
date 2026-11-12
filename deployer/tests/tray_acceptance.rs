@@ -214,6 +214,21 @@ fn native_tray_hides_restores_deploys_runs_and_exits() {
     }
     wait(|| unsafe { IsWindowVisible(main) == 0 });
     assert!(app.0.try_wait().unwrap().is_none());
+    step("Second launch restores the existing tray window");
+    let mut second = App(Command::new("C:/FleabInput/fleab.exe").spawn().unwrap());
+    let second_pid = second.0.id();
+    wait(|| second.0.try_wait().unwrap().is_some());
+    assert!(second.0.wait().unwrap().success());
+    wait(|| unsafe { IsWindowVisible(main) != 0 });
+    assert!(
+        window(second_pid, "").is_null(),
+        "Secondary launch must not leave another window"
+    );
+    assert!(app.0.try_wait().unwrap().is_none());
+    unsafe {
+        PostMessageW(main, WM_CLOSE, 0, 0);
+    }
+    wait(|| unsafe { IsWindowVisible(main) == 0 });
     step("Restoring from native Open Fleab menu");
     invoke(tray, "Open Fleab");
     wait(|| unsafe { IsWindowVisible(main) != 0 });
@@ -253,6 +268,15 @@ fn native_tray_hides_restores_deploys_runs_and_exits() {
         main = window(app.0.id(), "");
         !main.is_null()
     });
+    step("Second launch restores a normally minimised window");
+    unsafe {
+        ShowWindow(main, SW_MINIMIZE);
+    }
+    wait(|| unsafe { IsIconic(main) != 0 });
+    let mut second = App(Command::new("C:/FleabInput/fleab.exe").spawn().unwrap());
+    wait(|| second.0.try_wait().unwrap().is_some());
+    assert!(second.0.wait().unwrap().success());
+    wait(|| unsafe { IsIconic(main) == 0 && IsWindowVisible(main) != 0 });
     unsafe {
         PostMessageW(main, WM_CLOSE, 0, 0);
     }
