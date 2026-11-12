@@ -51,7 +51,16 @@ namespace Fleab.Publisher.Tests
                 settings.automaticPublishing = true;
                 report = BuildPipeline.BuildPlayer(options);
                 Assert.AreEqual(BuildResult.Succeeded, report.summary.result);
-                // Automatic publishing is queued until the build operation ends.
+                Assert.IsTrue(PublisherController.Busy,
+                    "Automatic publishing must start before another editor update");
+                // Block the editor test thread deliberately: the filesystem
+                // worker must publish even when no editor updates are serviced.
+                var backgroundDeadline = DateTime.UtcNow.AddSeconds(180);
+                while (Directory.GetFiles(published, "*.tar.zst").Length < before + 2
+                    && DateTime.UtcNow < backgroundDeadline)
+                    System.Threading.Thread.Sleep(25);
+                Assert.AreEqual(before + 2, Directory.GetFiles(published, "*.tar.zst").Length,
+                    "Automatic publishing must finish without editor updates or focus");
                 yield return null; yield return null;
                 deadline = EditorApplication.timeSinceStartup + 180;
                 while (PublisherController.Busy && EditorApplication.timeSinceStartup < deadline) yield return null;
