@@ -29,7 +29,9 @@ pub(super) fn install(ctx: &egui::Context) {
             style.spacing.button_padding = egui::vec2(14.0, 8.0);
             style.spacing.interact_size.y = 34.0;
             style.spacing.combo_height = 260.0;
-            style.spacing.scroll = egui::style::ScrollStyle::thin();
+            style.spacing.scroll = egui::style::ScrollStyle::solid();
+            style.spacing.scroll.bar_width = 12.0;
+            style.spacing.scroll.foreground_color = true;
             let visuals = &mut style.visuals;
             visuals.panel_fill = color(background);
             visuals.window_fill = color(surface);

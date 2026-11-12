@@ -1,5 +1,7 @@
+mod controller;
 mod design;
 mod icons;
+mod layout;
 #[cfg(target_os = "linux")]
 mod linux_theme;
 mod main_view;
@@ -100,6 +102,8 @@ pub struct FleabApp {
     children: Vec<(uuid::Uuid, Target, Child)>,
     updates: update_view::Updates,
     tray: tray::State,
+    controller: controller::State,
+    activation: Option<crate::instance::Activation>,
 }
 
 impl FleabApp {
@@ -107,6 +111,12 @@ impl FleabApp {
         tray::attach(cc);
     }
     pub fn new(ctx: &egui::Context) -> Self {
+        Self::create(ctx, None)
+    }
+    pub fn with_instance(ctx: &egui::Context, primary: crate::instance::Primary) -> Self {
+        Self::create(ctx, Some(primary))
+    }
+    fn create(ctx: &egui::Context, primary: Option<crate::instance::Primary>) -> Self {
         design::install(ctx);
         #[cfg(target_os = "linux")]
         linux_theme::watch(ctx);
@@ -127,21 +137,36 @@ impl FleabApp {
             children: Vec::new(),
             updates: update_view::Updates::default(),
             tray: tray::State::default(),
+            controller: controller::State::start(ctx),
+            activation: None,
         };
         let loaded = (|| -> Result<()> {
-            let path = profiles::config_path()?;
+            let path = primary
+                .as_ref()
+                .map(|p| Ok(p.path.clone()))
+                .unwrap_or_else(profiles::config_path)?;
             app.config_path = Some(path.clone());
             let parent = path.parent().context("Missing configuration parent")?;
             fs::create_dir_all(parent)?;
-            let lock = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(false)
-                .open(parent.join("fleab.lock"))?;
-            lock.try_lock_exclusive()
-                .context("Another Fleab instance is using these profiles; close it and restart")?;
+            let lock = if let Some(primary) = primary {
+                primary.lock
+            } else {
+                let lock = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .truncate(false)
+                    .open(parent.join("fleab.lock"))?;
+                lock.try_lock_exclusive().context(
+                    "Another Fleab instance is using these profiles; close it and restart",
+                )?;
+                lock
+            };
             app._config_lock = Some(lock);
+            let context = ctx.clone();
+            app.activation = Some(crate::instance::Activation::start(&path, move || {
+                tray::wake(&context)
+            }));
             app.config = Config::load(&path)?;
             if !app
                 .config
@@ -513,13 +538,40 @@ impl FleabApp {
 }
 
 impl eframe::App for FleabApp {
-    #[cfg(target_os = "linux")]
     fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
+        #[cfg(target_os = "linux")]
         linux_theme::system_input(ctx, input);
+        self.controller
+            .input(ctx, input, input.focused && !self.tray.hidden);
     }
 
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         tray::frame_started();
+        layout::fit_window(ctx);
+        if self
+            .activation
+            .as_ref()
+            .is_some_and(|activation| activation.take())
+        {
+            self.tray.show(ctx);
+        }
+        for shortcut in self.controller.shortcuts() {
+            match shortcut {
+                controller::Shortcut::Back if !self.updates.busy() => self.editor = None,
+                controller::Shortcut::Refresh if self.editor.is_none() && !self.updates.busy() => {
+                    self.refresh(ctx)
+                }
+                controller::Shortcut::Settings
+                    if self.editor.is_none()
+                        && self.worker.is_none()
+                        && !self.updates.busy()
+                        && !self.read_only =>
+                {
+                    self.open_settings()
+                }
+                _ => (),
+            }
+        }
         let previous_error = (self.error, self.status.clone());
         let blocked = self.worker.is_some()
             || self.updates.busy()

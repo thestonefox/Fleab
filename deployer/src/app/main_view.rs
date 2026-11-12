@@ -22,7 +22,7 @@ impl FleabApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(ctx.style().visuals.panel_fill).inner_margin(24))
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                layout::scroll(ui, "builds-scroll", |ui| {
                     ui.set_max_width(ui.available_width().min(860.0));
                     let busy = self.worker.is_some() || self.updates.busy();
                     ui.horizontal(|ui| {
@@ -55,13 +55,15 @@ impl FleabApp {
                         ui.set_width(ui.available_width());
                         ui.label("Game");
                         ui.add_enabled_ui(!busy && !self.read_only, |ui| {
-                            egui::ComboBox::from_id_salt("game").width(ui.available_width()).truncate()
+                            let picker = egui::ComboBox::from_id_salt("game").width(ui.available_width()).truncate()
                                 .selected_text(self.profile().map(|p| p.name.as_str()).unwrap_or("Select a game"))
                                 .show_ui(ui, |ui| {
                                     for profile in &self.config.profiles {
-                                        ui.selectable_value(&mut selected, Some(profile.id), &profile.name);
+                                        if ui.selectable_value(&mut selected, Some(profile.id), &profile.name).clicked() { ui.close(); }
                                     }
+                                    layout::list_navigation(ui);
                                 });
+                            controller::anchor(ui.ctx(), &picker.response);
                         });
                         if selected != self.config.selected_profile {
                             let mut config = self.config.clone();
@@ -85,9 +87,10 @@ impl FleabApp {
                                                 .unwrap_or_else(|| "No builds available".into()))
                                             .show_ui(ui, |ui| {
                                                 for (index, build) in self.builds.iter().enumerate() {
-                                                    ui.selectable_value(&mut self.selected_build, index, build_label(build))
-                                                        .on_hover_text(&build.filename);
+                                                    if ui.selectable_value(&mut self.selected_build, index, build_label(build))
+                                                        .on_hover_text(&build.filename).clicked() { ui.close(); }
                                                 }
+                                                layout::list_navigation(ui);
                                             }).response.on_hover_text(self.builds.get(self.selected_build)
                                                 .map(|b| b.filename.as_str()).unwrap_or("Refresh to look for published builds"));
                                     });
@@ -226,6 +229,7 @@ impl FleabApp {
                     if self.read_only && let Some(path) = &self.config_path {
                         ui.small(format!("Configuration: {}", path.display()));
                     }
+                    self.controller.hint(ui);
                 });
             });
     }
@@ -266,6 +270,8 @@ mod tests {
             children: Vec::new(),
             updates: update_view::Updates::default(),
             tray: tray::State::default(),
+            controller: controller::State::default(),
+            activation: None,
         }
     }
 

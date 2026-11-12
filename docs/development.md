@@ -72,12 +72,18 @@ Windows Sandbox checks avoid desktop interaction:
 ./tools/start-sandbox-tests.ps1 -UnityArchive 'D:\Published\Game_1_20261108-090000_Windows64.tar.zst'
 ```
 
+On Linux, gamepad input additionally requires `libudev-dev` and `pkg-config` at
+build time (`libudev1` at runtime). Both Linux CI/release workflows install the
+development package. Device access depends on the desktop's gamepad permissions.
+
 Build release/tests first and have `cargo` on PATH. The Sandbox feature must
 already be enabled. The guest runs unit/integration tests, optional real-player
 acceptance, and a GUI startup smoke check. Supplying a Unity archive also runs
 `tray_acceptance`: real native menu commands exercise close/minimise-to-tray,
 restoration, latest deployment, deploy-and-run, offline launching, explicit exit
-and normal closing when disabled. This GUI test is guarded to Sandbox and is
+and normal closing when disabled. It also starts the executable again and checks
+that the secondary exits while the original tray/minimised window is restored.
+This GUI test is guarded to Sandbox and is
 ignored in ordinary local/CI runs. Networking and clipboard are off.
 Only the read-only test input and a disposable result directory are mapped.
 The guest shuts itself down; the script has an explicit guest-user guard.

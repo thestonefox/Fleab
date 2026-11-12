@@ -1,5 +1,47 @@
 # Verification record
 
+## Handheld scrolling, repeated launches and controllers — 12 November 2026
+
+The reported device was a ROG Ally X at 720p. The window now fits its initial
+size to the available monitor dimensions with room for window decorations and
+the taskbar, and permits 360×240 logical content sizes. Short settings views use
+compact headers/footers. Content scrolls with a visible solid scrollbar, wheel,
+dragging, or the controller's right stick. Focused controls scroll into view;
+dropdown choices accept keyboard/controller confirmation and close correctly.
+
+Controller input uses GilRs with XInput on Windows and mapped input on Linux
+and macOS. Only focused, visible Fleab windows consume controller navigation.
+Held buttons are disarmed across focus loss, directional repeat is deliberate,
+and stick noise within the dead zone does not continuously repaint the app.
+Keyboard/on-screen-keyboard text entry and native file-picker navigation remain
+operating system interactions, rather than being represented as controller UI.
+
+Executed checks:
+
+* 57 ordinary Rust tests passed on Windows x64; 59 passed on native Linux x64
+  filesystems under WSL. Formatting, strict Clippy and workflow actionlint passed.
+* Geometry checks cover initial sizing at 720p with 100%, 125%, 150% and 200%
+  scaling. Settings layout checks include 640×300, 480×260 and 360×240 logical
+  windows in both themes.
+* Input checks cover pointer-free button/dropdown activation, stick dead zones,
+  direction repeat, disconnect/focus changes, wheel/drag/controller scrolling,
+  and focus progressing to lower controls while keeping them visible.
+* Hidden Windows Sandbox runs the actual portable application. Starting the
+  executable again exits the secondary and restores the original window from
+  both tray hiding and normal minimisation. The complete native tray menu,
+  latest deployment, real Unity launch, offline launch and explicit-exit tests
+  still pass.
+* Top/bottom settings and lower deployment controls were captured and inspected
+  at 640×300 logical size in hidden Sandbox. The capture harness uses production
+  views with capture-only palette/size/scroll overrides; this is an equivalent
+  constrained viewport, not a screenshot from an Ally X.
+
+Linux controller development files were supplied in an isolated temporary
+directory, without upgrading system packages. CI/release workflows install
+`libudev-dev` normally. A physical Ally X/controller, touch hardware, macOS and
+ARM64 runtime checks remain outstanding. No physical controller was passed
+through to Windows Sandbox; controller validation uses injected mapped input.
+
 ## Focus-independent publishing and background tray — 12 November 2026
 
 Automatic Unity publishing now starts its filesystem worker directly in the
