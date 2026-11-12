@@ -1,6 +1,6 @@
 use fleab::{
     archives::Build,
-    deployment, launching,
+    deployment,
     profiles::{Config, Profile},
 };
 use std::{
@@ -85,10 +85,18 @@ fn real_unity_player_deploys_launches_and_blocks_replacement() {
         profiles: vec![profile.clone()],
         ..Config::default()
     };
-    deployment::deploy(
+    profile.launch.game_arguments = vec![
+        "-batchmode".into(),
+        "-nographics".into(),
+        "-logFile".into(),
+        root.path().join("player.log").to_string_lossy().into(),
+    ];
+    let completed = deployment::action::run(
         &config,
         &profile,
         &build,
+        true,
+        &[],
         Arc::new(AtomicBool::new(false)),
         |_| {},
     )
@@ -100,13 +108,9 @@ fn real_unity_player_deploys_launches_and_blocks_replacement() {
             .filename,
         build.filename
     );
-    profile.launch.game_arguments = vec![
-        "-batchmode".into(),
-        "-nographics".into(),
-        "-logFile".into(),
-        root.path().join("player.log").to_string_lossy().into(),
-    ];
-    let mut child = launching::launch(&profile, build.target, &[]).unwrap();
+    let deployment::action::Launch::Started(mut child) = completed.launch else {
+        panic!("Combined action must launch the newly installed Unity player");
+    };
     let root_path = fleab::platform::resolved(profile.destination(build.target).unwrap()).unwrap();
     let blocked = fleab::platform::ensure_not_running(&root_path);
     let _ = child.kill();
