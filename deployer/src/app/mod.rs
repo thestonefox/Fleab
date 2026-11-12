@@ -38,6 +38,13 @@ struct ScanResult {
     targets: BTreeMap<Target, TargetState>,
     runners: Vec<Runner>,
     feedback: Option<(String, bool)>,
+    selection: BuildSelection,
+}
+
+#[derive(Clone, Copy)]
+enum BuildSelection {
+    Newest,
+    KeepCurrent,
 }
 enum Outcome {
     Scan(ScanResult),
@@ -208,9 +215,14 @@ impl FleabApp {
         });
     }
     fn refresh(&mut self, ctx: &egui::Context) {
-        self.scan(ctx, None);
+        self.scan(ctx, None, BuildSelection::Newest);
     }
-    fn scan(&mut self, ctx: &egui::Context, feedback: Option<(String, bool)>) {
+    fn scan(
+        &mut self,
+        ctx: &egui::Context,
+        feedback: Option<(String, bool)>,
+        selection: BuildSelection,
+    ) {
         if self.worker.is_some() || self.read_only || self.updates.active_download() {
             return;
         }
@@ -254,6 +266,7 @@ impl FleabApp {
                 targets,
                 runners,
                 feedback,
+                selection,
             })
         });
     }
@@ -278,9 +291,14 @@ impl FleabApp {
                                     .get(self.selected_build)
                                     .map(|b| b.filename.clone());
                                 self.builds = builds;
-                                self.selected_build = previous
-                                    .and_then(|p| self.builds.iter().position(|b| b.filename == p))
-                                    .unwrap_or(0);
+                                self.selected_build = match result.selection {
+                                    BuildSelection::Newest => 0,
+                                    BuildSelection::KeepCurrent => previous
+                                        .and_then(|p| {
+                                            self.builds.iter().position(|b| b.filename == p)
+                                        })
+                                        .unwrap_or(0),
+                                };
                                 let ready = if self.builds.is_empty() {
                                     "No matching archives. Configure a destination to enable that target, then Refresh.".into()
                                 } else {
@@ -322,7 +340,7 @@ impl FleabApp {
                             };
                             self.status = status.clone();
                             self.error = error;
-                            self.scan(ctx, Some((status, error)));
+                            self.scan(ctx, Some((status, error)), BuildSelection::KeepCurrent);
                         }
                         Err(error) => self.set_error(error),
                     },
