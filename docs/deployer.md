@@ -25,6 +25,43 @@ Windows Sandbox captures with a sample game profile:
 [dark settings](screenshots/settings-dark.png). These show the rendered window
 content; the OS draws the native title bar separately.
 
+## Handhelds, scrolling and controllers
+
+The initial window shrinks to fit small displays, including 720p handhelds at
+common Windows scaling settings. Its minimum content size is 360×240 logical
+pixels. Settings use a compact header/footer on short windows; Save/Cancel stay
+visible while the form scrolls. Solid scrollbars, mouse-wheel scrolling and
+dragging the content provide access to lower sections. Keyboard/controller
+focus also scrolls lower controls into view.
+
+Controller navigation is enabled automatically while Fleab is focused. Windows
+uses Xbox-compatible XInput controllers; Linux/macOS use the controller mappings
+provided by GilRs. Use the handheld's gamepad mode rather than mouse emulation.
+
+| Control | Action |
+|---|---|
+| D-pad / left stick | Move between controls and menu entries |
+| A / south button | Select the focused control |
+| B / east button | Close an open menu, or go back from Settings |
+| LB / RB | Previous / next focus; useful when editing a field |
+| Right stick | Scroll the panel or open dropdown |
+| X / west button | Refresh builds on the main screen |
+| Y / north button, or Menu | Open Settings |
+
+Text entry uses a keyboard or the system on-screen keyboard. Native system file
+pickers retain their operating system controls; this does not add gamepad
+navigation to those external dialogs. Gamepad inputs are ignored while Fleab
+is hidden or unfocused. Release held controls when returning from a game before
+using them to operate Fleab.
+
+Launching Fleab again restores the existing window, including from the tray or
+normal minimisation. The second process exits instead of opening a read-only
+duplicate. The profile lock still prevents concurrent configuration writers.
+
+Small-window captures show [the top of Settings](screenshots/handheld-settings-top.png),
+[lower fields after scrolling](screenshots/handheld-settings-bottom.png),
+and [the deployment controls after scrolling](screenshots/handheld-main-bottom.png).
+
 ## Deployment
 
 For shared-folder examples and profile setup, see [folders and profiles](profiles.md).
