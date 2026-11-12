@@ -7,6 +7,7 @@ enum Tab {
     Folders,
     Launch,
     Updates,
+    Application,
 }
 
 pub(super) struct Editor {
@@ -88,6 +89,12 @@ fn section(ui: &mut egui::Ui, title: &str) {
 }
 
 impl FleabApp {
+    pub(super) fn open_application_settings(&mut self) {
+        self.open_settings();
+        if let Some(editor) = &mut self.editor {
+            editor.tab = Tab::Application;
+        }
+    }
     pub(super) fn settings(&mut self, ctx: &egui::Context) {
         let Some(mut editor) = self.editor.take() else {
             return;
@@ -132,7 +139,7 @@ impl FleabApp {
                     ui.add_space(8.0);
                 }
                 ui.horizontal(|ui| {
-                    if editor.tab == Tab::Updates {
+                    if matches!(editor.tab, Tab::Updates | Tab::Application) {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
                                 .add_enabled(!self.updates.busy(), egui::Button::new("Done"))
@@ -166,7 +173,7 @@ impl FleabApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().id_salt("settings-scroll").show(ui, |ui| {
                     ui.set_max_width(ui.available_width().min(860.0));
-                    if editor.tab != Tab::Updates { design::card(ui).show(ui, |ui| {
+                    if !matches!(editor.tab, Tab::Updates | Tab::Application) { design::card(ui).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.label("Game profile");
                         egui::ComboBox::from_id_salt("edit-profile").width(ui.available_width()).truncate()
@@ -185,13 +192,21 @@ impl FleabApp {
                         });
                     });
                     ui.add_space(8.0); }
-                    ui.add_enabled_ui(!self.updates.busy(), |ui| { ui.horizontal(|ui| {
+                    ui.add_enabled_ui(!self.updates.busy(), |ui| { ui.horizontal_wrapped(|ui| {
                         ui.selectable_value(&mut editor.tab, Tab::Folders, "Profile & folders");
                         ui.selectable_value(&mut editor.tab, Tab::Launch, "Launch options");
                         ui.selectable_value(&mut editor.tab, Tab::Updates, "Updates");
+                        ui.selectable_value(&mut editor.tab, Tab::Application, "Application");
                     }); });
                     ui.add_space(8.0);
                     match editor.tab {
+                        Tab::Application => {
+                            design::card(ui).show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                section(ui, "Background behaviour");
+                                self.tray.settings(ctx, ui, self.read_only);
+                            });
+                        }
                         Tab::Updates => {
                             let unsaved = editor.unsaved(&self.config);
                             if unsaved { design::caption(ui, "Save or cancel your profile changes before installing an update."); }
@@ -390,6 +405,7 @@ mod tests {
                 editor: Some(Editor::new(Profile::default(), true)),
                 children: Vec::new(),
                 updates: update_view::Updates::default(),
+                tray: tray::State::default(),
             };
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
             // egui windows settle their auto-size on a second layout pass.
@@ -451,12 +467,19 @@ mod tests {
     }
 
     #[test]
-    fn updates_page_has_a_visible_done_action_without_a_profile() {
-        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+    fn application_pages_have_a_visible_done_action_without_a_profile() {
+        for (theme, tab) in [egui::Theme::Light, egui::Theme::Dark]
+            .into_iter()
+            .flat_map(|theme| {
+                [Tab::Updates, Tab::Application]
+                    .into_iter()
+                    .map(move |tab| (theme, tab))
+            })
+        {
             let ctx = egui::Context::default();
             design::install(&ctx);
             let mut editor = Editor::new(Profile::default(), false);
-            editor.tab = Tab::Updates;
+            editor.tab = tab;
             let mut app = FleabApp {
                 config: Config::default(),
                 config_path: None,
@@ -473,6 +496,7 @@ mod tests {
                 editor: Some(editor),
                 children: Vec::new(),
                 updates: update_view::Updates::default(),
+                tray: tray::State::default(),
             };
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(480.0, 390.0));
             let mut done = Vec::new();

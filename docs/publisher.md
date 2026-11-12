@@ -28,6 +28,11 @@ archive the output's parent folder. macOS archives contain the `.app` at the
 archive root. Avoid mixing unrelated content into a player's own `_Data`
 directory or runtime directories, which are deliberately packaged in full.
 
+Automatic publishing starts its worker directly from the successful-build
+callback. Packaging and copying do not wait for Unity to regain focus or
+service another editor update. Completion/progress UI catches up when the
+editor next updates; the archive itself can finish while Unity is unfocused.
+
 Packaging runs on a worker thread. Unity APIs and progress UI remain on the
 Editor thread; assembly reload is locked during publishing. Progress closes on
 success or failure. The console reports the resulting archive or a useful

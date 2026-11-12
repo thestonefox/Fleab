@@ -4,6 +4,7 @@ mod icons;
 mod linux_theme;
 mod main_view;
 mod settings;
+mod tray;
 mod update_view;
 use crate::{
     archives::{self, Build, Target},
@@ -58,7 +59,7 @@ struct Worker {
     deployment: bool,
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Action {
     #[default]
     DeployAndLaunch,
@@ -98,9 +99,13 @@ pub struct FleabApp {
     editor: Option<settings::Editor>,
     children: Vec<(uuid::Uuid, Target, Child)>,
     updates: update_view::Updates,
+    tray: tray::State,
 }
 
 impl FleabApp {
+    pub fn attach_window(&mut self, cc: &eframe::CreationContext<'_>) {
+        tray::attach(cc);
+    }
     pub fn new(ctx: &egui::Context) -> Self {
         design::install(ctx);
         #[cfg(target_os = "linux")]
@@ -121,6 +126,7 @@ impl FleabApp {
             editor: None,
             children: Vec::new(),
             updates: update_view::Updates::default(),
+            tray: tray::State::default(),
         };
         let loaded = (|| -> Result<()> {
             let path = profiles::config_path()?;
@@ -156,6 +162,9 @@ impl FleabApp {
             app.refresh(ctx);
         }
         app.updates = update_view::Updates::load();
+        if !app.read_only {
+            app.tray = tray::State::load(app.config_path.as_deref());
+        }
         app
     }
     fn profile(&self) -> Option<&Profile> {
@@ -205,7 +214,7 @@ impl FleabApp {
             if let Ok(outcome) = result {
                 let _ = sender.send(outcome);
             }
-            context.request_repaint();
+            tray::wake(&context);
         });
         self.worker = Some(Worker {
             receiver,
@@ -396,7 +405,7 @@ impl FleabApp {
                             if let Ok(mut current) = progress.lock() {
                                 *current = p;
                             }
-                            repaint.request_repaint();
+                            tray::wake(&repaint);
                         },
                     )
                     .map_err(|e| format!("{e:#}")),
@@ -420,6 +429,87 @@ impl FleabApp {
             )
         });
     }
+
+    fn tray_command(&mut self, ctx: &egui::Context, command: tray::Command) {
+        match command {
+            tray::Command::Open => self.tray.show(ctx),
+            tray::Command::Settings => {
+                self.tray.show(ctx);
+                if self.editor.is_none() && self.worker.is_none() && !self.updates.busy() {
+                    self.open_application_settings();
+                }
+            }
+            tray::Command::Exit => {
+                self.tray.quitting = true;
+            }
+            tray::Command::Game(id, target, action) => {
+                if self.worker.is_some()
+                    || self.updates.busy()
+                    || self.read_only
+                    || self.editor.is_some()
+                    || self.tray.quitting
+                {
+                    return;
+                }
+                let Some(profile) = self.config.profiles.iter().find(|p| p.id == id).cloned()
+                else {
+                    return;
+                };
+                if profile.destination(target).is_none() {
+                    return;
+                }
+                let mut config = self.config.clone();
+                config.selected_profile = Some(id);
+                if let Err(error) = self.save(config) {
+                    self.set_error(format!("{error:#}"));
+                    return;
+                }
+                self.builds.clear();
+                self.targets.clear();
+                if action == Action::LaunchInstalled {
+                    self.launch(ctx, target);
+                    return;
+                }
+                let config = self.config.clone();
+                let launch_after = action == Action::DeployAndLaunch;
+                let repaint = ctx.clone();
+                self.status = "Finding the latest published build…".into();
+                self.error = false;
+                self.start(
+                    ctx,
+                    "Finding latest build",
+                    true,
+                    move |cancel, progress| {
+                        let result = (|| -> Result<deployment::action::Completion> {
+                            let runners = if cfg!(target_os = "linux") {
+                                launching::discover_runners()
+                            } else {
+                                Vec::new()
+                            };
+                            let build =
+                                tray::latest_build(&profile, target, launch_after, &runners)?;
+                            deployment::action::run(
+                                &config,
+                                &profile,
+                                &build,
+                                launch_after,
+                                &runners,
+                                cancel,
+                                |p| {
+                                    if let Ok(mut current) = progress.lock() {
+                                        *current = p;
+                                    }
+                                    tray::wake(&repaint);
+                                },
+                            )
+                        })()
+                        .map_err(|error| format!("{error:#}"));
+                        Outcome::Deploy(result)
+                    },
+                );
+            }
+        }
+    }
 }
 
 impl eframe::App for FleabApp {
@@ -429,21 +519,60 @@ impl eframe::App for FleabApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        tray::frame_started();
+        let previous_error = (self.error, self.status.clone());
+        let blocked = self.worker.is_some()
+            || self.updates.busy()
+            || self.read_only
+            || self.editor.is_some()
+            || self.tray.quitting;
+        let commands = self.tray.tick(ctx, &self.config, blocked, &self.status);
+        for command in commands {
+            self.tray_command(ctx, command);
+        }
+        let closing = ctx.input(|i| i.viewport().close_requested());
+        let hide_on_close = closing && !self.updates.restarting && self.tray.close_to_tray();
+        if hide_on_close {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.tray.hide(ctx);
+        } else if !self.updates.restarting
+            && self.tray.minimise_to_tray()
+            && ctx.input(|i| i.viewport().minimized == Some(true))
+        {
+            self.tray.hide(ctx);
+        }
+        if self.tray.quitting {
+            if let Some(worker) = &self.worker {
+                worker.cancel.store(true, Ordering::Relaxed);
+            }
+            if self.updates.active_download() {
+                self.updates.cancel();
+            }
+        }
         self.poll(ctx);
         self.updates.tick(ctx, self.read_only);
-        if self.updates.active_download()
-            && !self.updates.restarting
-            && ctx.input(|i| i.viewport().close_requested())
-        {
+        if self.updates.active_download() && !self.updates.restarting && closing && !hide_on_close {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.updates.cancel();
         }
         if let Some(worker) = &self.worker {
             ctx.request_repaint_after(std::time::Duration::from_millis(80));
-            if worker.deployment && ctx.input(|i| i.viewport().close_requested()) {
+            if worker.deployment && closing && !hide_on_close {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 worker.cancel.store(true, Ordering::Relaxed);
             }
+        }
+        if self.tray.quitting && self.worker.is_none() && !self.updates.busy() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        if self.error
+            && self.tray.hidden
+            && (self.error, &self.status) != (previous_error.0, &previous_error.1)
+        {
+            self.tray.show(ctx);
+        }
+        if self.tray.hidden && !self.updates.restarting {
+            return;
         }
         if self.editor.is_some() {
             self.settings(ctx);

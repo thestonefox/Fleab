@@ -74,11 +74,19 @@ Windows Sandbox checks avoid desktop interaction:
 
 Build release/tests first and have `cargo` on PATH. The Sandbox feature must
 already be enabled. The guest runs unit/integration tests, optional real-player
-acceptance, and a GUI startup smoke check. Networking and clipboard are off.
+acceptance, and a GUI startup smoke check. Supplying a Unity archive also runs
+`tray_acceptance`: real native menu commands exercise close/minimise-to-tray,
+restoration, latest deployment, deploy-and-run, offline launching, explicit exit
+and normal closing when disabled. This GUI test is guarded to Sandbox and is
+ignored in ordinary local/CI runs. Networking and clipboard are off.
 Only the read-only test input and a disposable result directory are mapped.
 The guest shuts itself down; the script has an explicit guest-user guard.
 Results are written under `.tools/sandbox-results-*/`. GUI smoke establishes
 startup, not interaction correctness or visual layout.
+
+The real Unity build test additionally blocks editor updates after a successful
+automatic build and requires the published archive to appear before updates
+resume. This catches regressions that put publishing back behind `delayCall`.
 
 The optional `-UpdaterFixtures PATH` runs the guarded desktop updater acceptance
 test in Sandbox too. `PATH/good` and `PATH/broken` must each contain an

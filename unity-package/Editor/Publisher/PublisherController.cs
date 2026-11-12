@@ -19,9 +19,12 @@ namespace Fleab.Publisher
                 var record = Capture(report);
                 if (record == null) return;
                 PublisherController.Remember(record);
-                if (PublisherSettings.instance.automaticPublishing) EditorApplication.delayCall += () => PublisherController.Start(record);
+                // Capture Unity data on the build callback's main thread, then
+                // start the filesystem-only worker immediately. delayCall can
+                // wait for editor focus before starting any publishing work.
+                if (PublisherSettings.instance.automaticPublishing) PublisherController.Start(record);
             }
-            catch (Exception error) { Debug.LogError("Fleab: Unity built successfully, but output discovery failed. Original build preserved. " + error); }
+            catch (Exception error) { Debug.LogError("Fleab: Unity built successfully, but publishing could not start. Original build preserved. " + error); }
         }
         internal static BuildRecord Capture(BuildReport report)
         {

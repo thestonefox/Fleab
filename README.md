@@ -26,7 +26,7 @@ always-on target computer is needed.
 1. In Unity Package Manager, choose **Install package from Git URL** and paste:
 
    ```text
-   https://github.com/thestonefox/Fleab.git?path=/unity-package#v0.1.0
+   https://github.com/thestonefox/Fleab.git?path=/unity-package
    ```
 
 2. Open **Tools > Fleab > Settings**, choose a publishing folder and enable
@@ -40,6 +40,14 @@ always-on target computer is needed.
 
 Use the test computer's path to the published folder. A network share can have
 different paths on different machines.
+
+For background game shortcuts, enable **Settings > Application > Keep Fleab in
+the system tray** (menu bar on macOS). Minimise and close behaviour are optional.
+
+The Unity Git URL above follows `main`. Update the package in Unity Package
+Manager to receive publisher fixes. An existing URL pinned to `#v0.1.0` keeps
+that old publisher until its Git reference is changed; updating the desktop app
+does not update the Unity package. Use a release tag when you want a fixed version.
 
 <details>
 <summary>See profile settings</summary>

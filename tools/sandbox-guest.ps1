@@ -19,6 +19,11 @@ try {
         & C:\FleabInput\acceptance.exe real_unity_player --ignored --test-threads=1
         if ($LASTEXITCODE -ne 0) { throw 'Real Unity player acceptance failed' }
         $result.details += 'Real Unity archive deployed and launched; running process detected'
+        $trayTest = Start-Process C:\FleabInput\tray_acceptance.exe -ArgumentList '--ignored','--nocapture','--test-threads=1' -PassThru -RedirectStandardOutput C:\FleabResults\tray-tests.txt -RedirectStandardError C:\FleabResults\tray-errors.txt
+        $trayHandle = $trayTest.Handle
+        if (!$trayTest.WaitForExit(180000)) { throw 'Tray lifecycle acceptance timed out' }
+        if ($trayTest.ExitCode -ne 0) { throw 'Tray lifecycle acceptance failed' }
+        $result.details += 'Native tray: close/minimise, restore, latest deployment, game launch, offline run and explicit exit passed'
     }
     $app = Start-Process -FilePath C:\FleabInput\fleab.exe -PassThru
     Start-Sleep -Seconds 5

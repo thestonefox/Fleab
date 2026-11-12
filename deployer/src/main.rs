@@ -12,6 +12,15 @@ fn main() -> eframe::Result {
         .into_rgba8();
     let (width, height) = icon.dimensions();
     let options = eframe::NativeOptions {
+        #[cfg(target_os = "linux")]
+        event_loop_builder: Some(Box::new(|builder| {
+            // winit cannot hide/unhide a native Wayland window. Prefer X11
+            // (including XWayland) when available so tray restoration works.
+            if std::env::var_os("DISPLAY").is_some() {
+                use winit::platform::x11::EventLoopBuilderExtX11;
+                builder.with_x11();
+            }
+        })),
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title(&title)
             .with_decorations(true)
@@ -27,6 +36,10 @@ fn main() -> eframe::Result {
     eframe::run_native(
         &title,
         options,
-        Box::new(|cc| Ok(Box::new(fleab::app::FleabApp::new(&cc.egui_ctx)))),
+        Box::new(|cc| {
+            let mut app = fleab::app::FleabApp::new(&cc.egui_ctx);
+            app.attach_window(cc);
+            Ok(Box::new(app))
+        }),
     )
 }
