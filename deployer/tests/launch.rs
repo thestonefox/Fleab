@@ -7,6 +7,52 @@ use fleab::{
 use std::{fs, path::Path};
 use uuid::Uuid;
 
+#[test]
+fn selected_build_preflight_does_not_require_an_installed_build() {
+    let profile = Profile::default();
+    let platform = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "aarch64") => "WindowsARM64",
+        ("windows", _) => "Windows64",
+        ("linux", "aarch64") => "LinuxARM64",
+        ("linux", _) => "Linux64",
+        ("macos", "aarch64") => "macOSARM64",
+        ("macos", _) => "macOS64",
+        _ => panic!("Unsupported test host"),
+    };
+    let build = fleab::archives::Build::parse(Path::new(&format!(
+        "Game_NEW_20261108-090000_{platform}.tar.zst"
+    )))
+    .unwrap();
+    launching::check_build(&profile, &build, std::env::consts::OS, &[]).unwrap();
+    assert!(launching::check_build(&profile, &build, "unsupported", &[]).is_err());
+}
+
+#[test]
+fn compatibility_preflight_checks_runner_settings_before_installation() {
+    let temp = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
+    let mut profile = Profile::default();
+    let platform = if cfg!(target_arch = "aarch64") {
+        "WindowsARM64"
+    } else {
+        "Windows64"
+    };
+    let build = fleab::archives::Build::parse(Path::new(&format!(
+        "Game_NEW_20261108-090000_{platform}.tar.zst"
+    )))
+    .unwrap();
+    assert!(launching::check_build(&profile, &build, "linux", &[]).is_err());
+    profile.launch.runner = temp.path().join("runner").to_string_lossy().into();
+    fs::write(&profile.launch.runner, b"runner").unwrap();
+    profile.launch.runner_kind = RunnerKind::Wine;
+    launching::check_build(&profile, &build, "linux", &[]).unwrap();
+    profile.launch.runner_kind = RunnerKind::Proton;
+    assert!(launching::check_build(&profile, &build, "linux", &[]).is_err());
+    profile.launch.steam_root = temp.path().to_string_lossy().into();
+    launching::check_build(&profile, &build, "linux", &[]).unwrap();
+    profile.launch.prefix = "relative-prefix".into();
+    assert!(launching::check_build(&profile, &build, "linux", &[]).is_err());
+}
+
 fn setup(root: &Path) -> Profile {
     let dest = root.join("installed");
     fs::create_dir(&dest).unwrap();

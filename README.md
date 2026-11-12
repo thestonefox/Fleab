@@ -18,7 +18,7 @@ always-on target computer is needed.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/fleab-dark.png" />
-  <img src="docs/screenshots/fleab-light.png" width="780" alt="Fleab desktop app showing a published build, its destination, and Deploy and Launch controls" />
+  <img src="docs/screenshots/fleab-light.png" width="780" alt="Fleab desktop app showing a published build, its destination, and Deploy and launch split button" />
 </picture>
 
 ## Quickstart
@@ -35,7 +35,8 @@ always-on target computer is needed.
    computer, extract it, and open the app.
 4. Open the **settings cog** and create a game profile. Set the archive source
    to your publishing folder and choose a dedicated installation folder for each
-   target you need. Save, select a build, then **Deploy** and **Launch**.
+   target you need. Save, select a build, then **Deploy and launch**. The button's
+   dropdown also offers **Deploy only** and **Launch installed**.
 
 Use the test computer's path to the published folder. A network share can have
 different paths on different machines.

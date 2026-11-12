@@ -37,10 +37,11 @@ struct ScanResult {
     builds: Result<Vec<Build>, String>,
     targets: BTreeMap<Target, TargetState>,
     runners: Vec<Runner>,
+    feedback: Option<(String, bool)>,
 }
 enum Outcome {
     Scan(ScanResult),
-    Deploy(Result<Installed, String>),
+    Deploy(Result<deployment::action::Completion, String>),
     Launch(Result<(uuid::Uuid, Target, Child), String>),
 }
 struct Worker {
@@ -50,6 +51,30 @@ struct Worker {
     deployment: bool,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Action {
+    #[default]
+    DeployAndLaunch,
+    DeployOnly,
+    LaunchInstalled,
+}
+
+impl Action {
+    const ALL: [Self; 3] = [
+        Self::DeployAndLaunch,
+        Self::DeployOnly,
+        Self::LaunchInstalled,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::DeployAndLaunch => "Deploy and launch",
+            Self::DeployOnly => "Deploy only",
+            Self::LaunchInstalled => "Launch installed",
+        }
+    }
+}
+
 pub struct FleabApp {
     config: Config,
     config_path: Option<PathBuf>,
@@ -57,6 +82,7 @@ pub struct FleabApp {
     read_only: bool,
     builds: Vec<Build>,
     selected_build: usize,
+    action: Action,
     targets: BTreeMap<Target, TargetState>,
     runners: Vec<Runner>,
     status: String,
@@ -79,6 +105,7 @@ impl FleabApp {
             read_only: false,
             builds: Vec::new(),
             selected_build: 0,
+            action: Action::default(),
             targets: BTreeMap::new(),
             runners: Vec::new(),
             status: "Create a profile in Settings to get started.".into(),
@@ -181,6 +208,9 @@ impl FleabApp {
         });
     }
     fn refresh(&mut self, ctx: &egui::Context) {
+        self.scan(ctx, None);
+    }
+    fn scan(&mut self, ctx: &egui::Context, feedback: Option<(String, bool)>) {
         if self.worker.is_some() || self.read_only || self.updates.active_download() {
             return;
         }
@@ -189,8 +219,10 @@ impl FleabApp {
             self.targets.clear();
             return;
         };
-        self.status = "Reading archive source…".into();
-        self.error = false;
+        if feedback.is_none() {
+            self.status = "Reading archive source…".into();
+            self.error = false;
+        }
         self.start(ctx, "Reading archive source", false, move |_, _| {
             let runners = if cfg!(target_os = "linux") {
                 launching::discover_runners()
@@ -221,6 +253,7 @@ impl FleabApp {
                 builds: archives::discover(&profile).map_err(|e| format!("{e:#}")),
                 targets,
                 runners,
+                feedback,
             })
         });
     }
@@ -248,21 +281,48 @@ impl FleabApp {
                                 self.selected_build = previous
                                     .and_then(|p| self.builds.iter().position(|b| b.filename == p))
                                     .unwrap_or(0);
-                                self.status = if self.builds.is_empty() {
+                                let ready = if self.builds.is_empty() {
                                     "No matching archives. Configure a destination to enable that target, then Refresh.".into()
                                 } else {
                                     "Ready".into()
                                 };
-                                self.error = false;
+                                (self.status, self.error) =
+                                    result.feedback.unwrap_or((ready, false));
                             }
-                            Err(error) => self.set_error(error),
+                            Err(error) => self.set_error(match result.feedback {
+                                Some((status, _)) => {
+                                    format!("{status}\nCould not refresh archives: {error}")
+                                }
+                                None => error,
+                            }),
                         }
                     }
                     Outcome::Deploy(result) => match result {
-                        Ok(record) => {
-                            self.refresh(ctx);
-                            self.status = format!("Installed {}", record.filename);
-                            self.error = false;
+                        Ok(completed) => {
+                            use deployment::action::Launch;
+                            let record = completed.installed;
+                            let (status, error) = match completed.launch {
+                                Launch::NotRequested => {
+                                    (format!("Installed {}", record.filename), false)
+                                }
+                                Launch::Cancelled => {
+                                    ("Build installed. Launch cancelled.".into(), false)
+                                }
+                                Launch::Started(child) => {
+                                    self.children
+                                        .push((record.profile_id, record.target, child));
+                                    ("Build deployed and launched.".into(), false)
+                                }
+                                Launch::Failed(error) => (
+                                    format!(
+                                        "Build deployed, but could not launch: {error:#}. The installation is ready; retry with Launch installed."
+                                    ),
+                                    true,
+                                ),
+                            };
+                            self.status = status.clone();
+                            self.error = error;
+                            self.scan(ctx, Some((status, error)));
                         }
                         Err(error) => self.set_error(error),
                     },
@@ -286,8 +346,8 @@ impl FleabApp {
             _ => (),
         }
     }
-    fn deploy(&mut self, ctx: &egui::Context) {
-        if self.updates.busy() {
+    fn deploy(&mut self, ctx: &egui::Context, launch_after: bool) {
+        if self.worker.is_some() || self.read_only || self.updates.busy() {
             return;
         }
         let Some(profile) = self.profile().cloned() else {
@@ -297,6 +357,7 @@ impl FleabApp {
             return;
         };
         let config = self.config.clone();
+        let runners = self.runners.clone();
         let repaint = ctx.clone();
         self.status = "Deploying…".into();
         self.error = false;
@@ -306,19 +367,27 @@ impl FleabApp {
             true,
             move |cancel, progress| {
                 Outcome::Deploy(
-                    deployment::deploy(&config, &profile, &build, cancel, |p| {
-                        if let Ok(mut current) = progress.lock() {
-                            *current = p;
-                        }
-                        repaint.request_repaint();
-                    })
+                    deployment::action::run(
+                        &config,
+                        &profile,
+                        &build,
+                        launch_after,
+                        &runners,
+                        cancel,
+                        |p| {
+                            if let Ok(mut current) = progress.lock() {
+                                *current = p;
+                            }
+                            repaint.request_repaint();
+                        },
+                    )
                     .map_err(|e| format!("{e:#}")),
                 )
             },
         );
     }
     fn launch(&mut self, ctx: &egui::Context, target: Target) {
-        if self.updates.busy() {
+        if self.worker.is_some() || self.read_only || self.updates.busy() {
             return;
         }
         let Some(profile) = self.profile().cloned() else {

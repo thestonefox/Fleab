@@ -6,7 +6,7 @@ pub(super) enum Icon {
     Refresh,
     Folder,
     Back,
-    Play,
+    ChevronDown,
 }
 
 pub(super) fn button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool) -> Response {
@@ -28,30 +28,6 @@ pub(super) fn button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool) -> Res
             }),
     );
     response.on_hover_text(label)
-}
-
-pub(super) fn text_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool) -> Response {
-    let response = ui.add_enabled(
-        enabled,
-        egui::Button::new(format!("     {label}")).min_size(Vec2::new(100.0, 36.0)),
-    );
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
-    paint(
-        ui,
-        icon,
-        Pos2::new(response.rect.left() + 17.0, response.rect.center().y),
-        16.0,
-        ui.style()
-            .interact(&response)
-            .fg_stroke
-            .color
-            .gamma_multiply(if enabled {
-                1.0
-            } else {
-                ui.visuals().disabled_alpha()
-            }),
-    );
-    response
 }
 
 pub(super) fn paint(ui: &Ui, icon: Icon, center: Pos2, size: f32, color: Color32) {
@@ -103,9 +79,9 @@ pub(super) fn paint(ui: &Ui, icon: Icon, center: Pos2, size: f32, color: Color32
                 stroke,
             ));
         }
-        Icon::Play => {
-            painter.add(egui::Shape::closed_line(
-                vec![point(-5.0, -7.0), point(7.0, 0.0), point(-5.0, 7.0)],
+        Icon::ChevronDown => {
+            painter.add(egui::Shape::line(
+                vec![point(-5.0, -2.0), point(0.0, 3.0), point(5.0, -2.0)],
                 stroke,
             ));
         }

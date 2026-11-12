@@ -141,16 +141,14 @@ impl LaunchPlan {
     }
 }
 
-pub fn plan(
+/// Check launch support for a selected archive before it is installed.
+pub fn check_build(
     profile: &Profile,
-    target: Target,
+    build: &crate::archives::Build,
     host: &str,
     runners: &[Runner],
-) -> Result<LaunchPlan> {
-    let record =
-        deployment::installed(profile, target)?.context("No build is installed for this target")?;
+) -> Result<()> {
     if host == std::env::consts::OS {
-        let build = crate::archives::Build::parse(Path::new(&record.filename))?;
         let arm = std::env::consts::ARCH == "aarch64";
         let architecture_supported = match build.platform.as_str() {
             "WindowsARM64" | "LinuxARM64" | "macOSARM64" => arm,
@@ -160,11 +158,85 @@ pub fn plan(
         };
         ensure!(
             architecture_supported,
-            "Installed {} build cannot launch on {}. Deployment is still supported",
+            "{} build cannot launch on {}. Choose Deploy only to install it",
             build.platform,
             std::env::consts::ARCH
         );
     }
+    compatibility_runner(profile, build.target, host, runners)?;
+    Ok(())
+}
+
+fn compatibility_runner(
+    profile: &Profile,
+    target: Target,
+    host: &str,
+    runners: &[Runner],
+) -> Result<Option<(PathBuf, RunnerKind, PathBuf)>> {
+    if target.os() == host {
+        return Ok(None);
+    }
+    ensure!(
+        host == "linux" && target.os() == "windows",
+        "{} builds cannot launch on {host}. Choose Deploy only to install them",
+        target.label()
+    );
+    let launch = &profile.launch;
+    let detected = if launch.runner.is_empty() {
+        Some(
+            runners
+                .iter()
+                .find(|r| launch.runner_kind == RunnerKind::Auto || launch.runner_kind == r.kind)
+                .context("No Wine/Proton runner found; configure one in settings")?,
+        )
+    } else {
+        None
+    };
+    let (runner, kind, steam) = if let Some(r) = detected {
+        (r.path.clone(), r.kind, r.steam_root.clone())
+    } else {
+        ensure!(
+            launch.runner_kind != RunnerKind::Auto,
+            "Choose Wine or Proton for a manual runner"
+        );
+        (
+            PathBuf::from(&launch.runner),
+            launch.runner_kind,
+            PathBuf::from(&launch.steam_root),
+        )
+    };
+    ensure!(
+        runner.is_absolute() && runner.is_file(),
+        "Runner executable does not exist"
+    );
+    let steam = if !launch.steam_root.is_empty() {
+        PathBuf::from(&launch.steam_root)
+    } else {
+        steam
+    };
+    if kind == RunnerKind::Proton {
+        ensure!(
+            steam.is_absolute() && steam.is_dir(),
+            "Proton needs a valid Steam root directory"
+        );
+    }
+    ensure!(
+        launch.prefix.is_empty() || Path::new(&launch.prefix).is_absolute(),
+        "Compatibility prefix must be an absolute path"
+    );
+    Ok(Some((runner, kind, steam)))
+}
+
+pub fn plan(
+    profile: &Profile,
+    target: Target,
+    host: &str,
+    runners: &[Runner],
+) -> Result<LaunchPlan> {
+    let record =
+        deployment::installed(profile, target)?.context("No build is installed for this target")?;
+    let build = crate::archives::Build::parse(Path::new(&record.filename))?;
+    check_build(profile, &build, host, runners)?;
     let root = platform::safe_destination(profile.destination(target).context("No destination")?)?;
     let configured = profile
         .executable_overrides
@@ -200,52 +272,11 @@ pub fn plan(
             result.directory = executable.parent().unwrap_or(&root).to_owned();
         }
     } else {
-        ensure!(
-            host == "linux" && target.os() == "windows",
-            "{} builds cannot launch on {host}. Deployment is still supported",
-            target.label()
-        );
         let launch = &profile.launch;
-        let detected = if launch.runner.is_empty() {
-            Some(
-                runners
-                    .iter()
-                    .find(|r| {
-                        launch.runner_kind == RunnerKind::Auto || launch.runner_kind == r.kind
-                    })
-                    .context("No Wine/Proton runner found; configure one in settings")?,
-            )
-        } else {
-            None
-        };
-        let (runner, kind, steam) = if let Some(r) = detected {
-            (r.path.clone(), r.kind, r.steam_root.clone())
-        } else {
-            ensure!(
-                launch.runner_kind != RunnerKind::Auto,
-                "Choose Wine or Proton for a manual runner"
-            );
-            (
-                PathBuf::from(&launch.runner),
-                launch.runner_kind,
-                PathBuf::from(&launch.steam_root),
-            )
-        };
-        ensure!(
-            runner.is_absolute() && runner.is_file(),
-            "Runner executable does not exist"
-        );
+        let (runner, kind, steam) = compatibility_runner(profile, target, host, runners)?
+            .context("No compatibility runner")?;
         result.program = runner;
         if kind == RunnerKind::Proton {
-            let steam = if !launch.steam_root.is_empty() {
-                PathBuf::from(&launch.steam_root)
-            } else {
-                steam
-            };
-            ensure!(
-                steam.is_absolute() && steam.is_dir(),
-                "Proton needs a valid Steam root directory"
-            );
             if launch.runner_arguments.is_empty() {
                 result.arguments.push(OsString::from("run"));
             }

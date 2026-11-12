@@ -1,3 +1,5 @@
+pub mod action;
+
 use crate::{
     archives::{self, Build, Target},
     launching, platform,
