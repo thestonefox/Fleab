@@ -130,18 +130,73 @@ impl FleabApp {
                         Some(*profile) == self.config.selected_profile && *t == target
                     }));
                     let busy = self.worker.is_some() || self.updates.busy();
+                    let deploy_reason = if running {
+                        Some("Close the running game before deploying".to_owned())
+                    } else if target.is_none() {
+                        Some("Choose a published build to deploy".to_owned())
+                    } else { None };
+                    let combined_reason = deploy_reason.clone().or_else(|| {
+                        self.profile().zip(self.builds.get(self.selected_build)).and_then(|(profile, build)| {
+                            launching::check_build(profile, build, std::env::consts::OS, &self.runners)
+                                .err().map(|e| format!("{e:#}"))
+                        })
+                    });
+                    let installed_reason = launch_reason.clone().or_else(|| {
+                        (!launch_enabled).then(|| "No launchable build is installed for this target".to_owned())
+                    });
+                    let action_reason = match self.action {
+                        Action::DeployAndLaunch => combined_reason,
+                        Action::DeployOnly => deploy_reason,
+                        Action::LaunchInstalled => installed_reason,
+                    };
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
-                        if design::primary(ui, "Deploy", !busy && target.is_some() && !self.read_only && !running)
-                            .on_hover_text(if running { "Close the running game before deploying" }
-                                else { "Install the selected build" }).clicked() { self.deploy(ctx); }
-                        if icons::text_button(ui, Icon::Play, "Launch", !busy && launch_enabled)
-                            .on_hover_text(launch_reason.as_deref().unwrap_or("Start the installed build"))
-                            .clicked() && let Some(target) = target { self.launch(ctx, target); }
+                        let execute = ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            let execute = design::primary_button(ui,
+                                egui::Button::new(self.action.label()).min_size(egui::vec2(176.0, 36.0))
+                                    .corner_radius(egui::CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 }),
+                                !busy && !self.read_only && action_reason.is_none())
+                                .on_hover_text(action_reason.as_deref().unwrap_or(match self.action {
+                                    Action::DeployAndLaunch => "Install the selected build, then start it",
+                                    Action::DeployOnly => "Install the selected build without starting it",
+                                    Action::LaunchInstalled => "Start the installed build without deploying",
+                                })).clicked();
+                            let menu = design::primary_button(ui,
+                                egui::Button::new("").min_size(egui::vec2(36.0, 36.0))
+                                    .corner_radius(egui::CornerRadius { nw: 0, sw: 0, ne: 4, se: 4 }),
+                                !busy && !self.read_only)
+                                .on_hover_text("Choose action");
+                            menu.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, menu.enabled(), "Choose action"));
+                            let ink = if ui.visuals().dark_mode { egui::Color32::from_rgb(0, 51, 77) }
+                                else { egui::Color32::WHITE };
+                            icons::paint(ui, Icon::ChevronDown, menu.rect.center(), 16.0,
+                                ink.gamma_multiply(if menu.enabled() { 1.0 } else { ui.visuals().disabled_alpha() }));
+                            ui.painter().line_segment([
+                                menu.rect.left_center() + egui::vec2(0.0, -9.0),
+                                menu.rect.left_center() + egui::vec2(0.0, 9.0),
+                            ], egui::Stroke::new(1.0_f32, ink.gamma_multiply(0.25)));
+                            egui::Popup::menu(&menu).show(|ui| {
+                                ui.set_min_width(200.0);
+                                for action in Action::ALL {
+                                    if ui.selectable_value(&mut self.action, action, action.label()).clicked() {
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            execute
+                        }).inner;
+                        if execute {
+                            match self.action {
+                                Action::DeployAndLaunch => self.deploy(ctx, true),
+                                Action::DeployOnly => self.deploy(ctx, false),
+                                Action::LaunchInstalled => if let Some(target) = target { self.launch(ctx, target); },
+                            }
+                        }
                         if icons::button(ui, Icon::Refresh, "Refresh builds", !busy && self.profile().is_some() && !self.read_only)
                             .clicked() { self.refresh(ctx); }
                     });
-                    if let Some(reason) = launch_reason { design::caption(ui, &reason); }
+                    if let Some(reason) = action_reason { design::caption(ui, &reason); }
                     if let Some(worker) = &self.worker && let Ok(progress) = worker.progress.lock() {
                         ui.add_space(8.0);
                         let bar = egui::ProgressBar::new(progress.fraction.unwrap_or(0.0)).text(progress.phase);
@@ -166,49 +221,179 @@ impl FleabApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sample_app() -> FleabApp {
+        let profile = Profile {
+            name: "A game with a very long profile name ".repeat(6),
+            ..Default::default()
+        };
+        let config = Config {
+            schema_version: 1,
+            selected_profile: Some(profile.id),
+            profiles: vec![profile],
+        };
+        let build = Build::parse(std::path::Path::new(
+            "Game_1.0_20261108-095828_Windows64.tar.zst",
+        ))
+        .unwrap();
+        FleabApp {
+            config,
+            config_path: None,
+            _config_lock: None,
+            read_only: false,
+            builds: vec![build],
+            selected_build: 0,
+            action: Action::default(),
+            targets: BTreeMap::new(),
+            runners: Vec::new(),
+            status: "Ready".into(),
+            error: false,
+            worker: None,
+            editor: None,
+            children: Vec::new(),
+            updates: update_view::Updates::default(),
+        }
+    }
+
+    fn render(
+        app: &mut FleabApp,
+        ctx: &egui::Context,
+        size: egui::Vec2,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events,
+                ..Default::default()
+            },
+            |ctx| app.main_view(ctx),
+        )
+    }
+
+    fn click(app: &mut FleabApp, ctx: &egui::Context, position: egui::Pos2) {
+        for pressed in [true, false] {
+            render(
+                app,
+                ctx,
+                egui::vec2(780.0, 660.0),
+                vec![
+                    egui::Event::PointerMoved(position),
+                    egui::Event::PointerButton {
+                        pos: position,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+            );
+        }
+    }
+
+    #[test]
+    fn rescanning_preserves_the_deployment_and_launch_result() {
+        let ctx = egui::Context::default();
+        for scan_fails in [false, true] {
+            let mut app = sample_app();
+            let (sender, receiver) = mpsc::channel();
+            sender
+                .send(Outcome::Scan(ScanResult {
+                    builds: if scan_fails {
+                        Err("Source disconnected".into())
+                    } else {
+                        Ok(app.builds.clone())
+                    },
+                    targets: BTreeMap::new(),
+                    runners: vec![],
+                    feedback: Some((
+                        "Build deployed, but could not launch: access denied".into(),
+                        true,
+                    )),
+                }))
+                .unwrap();
+            app.worker = Some(Worker {
+                receiver,
+                cancel: Arc::new(AtomicBool::new(false)),
+                progress: Arc::new(Mutex::new(Progress {
+                    phase: "Reading archive source",
+                    fraction: None,
+                    cancellable: false,
+                })),
+                deployment: false,
+            });
+            app.poll(&ctx);
+            assert!(app.error);
+            assert!(
+                app.status
+                    .starts_with("Build deployed, but could not launch: access denied")
+            );
+            assert_eq!(app.status.contains("Source disconnected"), scan_fails);
+        }
+    }
+
+    #[test]
+    fn choosing_a_dropdown_action_does_not_execute_it() {
+        let ctx = egui::Context::default();
+        design::install(&ctx);
+        let mut app = sample_app();
+        assert!(app.action == Action::DeployAndLaunch);
+        let mut button = None;
+        for _ in 0..3 {
+            let output = render(&mut app, &ctx, egui::vec2(780.0, 660.0), vec![]);
+            button = output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect)
+                    if (rect.rect.width() - 176.0).abs() < 0.1
+                        && (rect.rect.height() - 36.0).abs() < 0.1 =>
+                {
+                    Some(rect.rect)
+                }
+                _ => None,
+            });
+        }
+        let button = button.expect("Primary action button");
+        click(
+            &mut app,
+            &ctx,
+            button.right_center() + egui::vec2(18.0, 0.0),
+        );
+        let mut choice = None;
+        for _ in 0..3 {
+            let output = render(&mut app, &ctx, egui::vec2(780.0, 660.0), vec![]);
+            choice = output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == "Deploy only" => {
+                    Some(text.pos + text.galley.size() / 2.0)
+                }
+                _ => None,
+            });
+        }
+        click(&mut app, &ctx, choice.expect("Deploy only menu option"));
+        assert!(app.action == Action::DeployOnly);
+        assert!(app.worker.is_none(), "Selecting an action must not deploy");
+        let output = render(&mut app, &ctx, egui::vec2(780.0, 660.0), vec![]);
+        assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
+            egui::Shape::Text(text) if text.galley.text() == "Deploy only")));
+    }
+
     #[test]
     fn build_controls_fit_narrow_and_default_windows() {
-        for size in [egui::vec2(480.0, 390.0), egui::vec2(780.0, 660.0)] {
+        for (size, action, theme) in [egui::vec2(480.0, 390.0), egui::vec2(780.0, 660.0)]
+            .into_iter()
+            .flat_map(|size| {
+                Action::ALL.into_iter().flat_map(move |action| {
+                    [egui::ThemePreference::Light, egui::ThemePreference::Dark]
+                        .into_iter()
+                        .map(move |theme| (size, action, theme))
+                })
+            })
+        {
             let ctx = egui::Context::default();
             design::install(&ctx);
-            let profile = Profile {
-                name: "A game with a very long profile name ".repeat(6),
-                ..Default::default()
-            };
-            let config = Config {
-                schema_version: 1,
-                selected_profile: Some(profile.id),
-                profiles: vec![profile],
-            };
-            let build = Build::parse(std::path::Path::new(
-                "Game_1.0_20261108-095828_Windows64.tar.zst",
-            ))
-            .unwrap();
-            let mut app = FleabApp {
-                config,
-                config_path: None,
-                _config_lock: None,
-                read_only: false,
-                builds: vec![build],
-                selected_build: 0,
-                targets: BTreeMap::new(),
-                runners: Vec::new(),
-                status: "Ready".into(),
-                error: false,
-                worker: None,
-                editor: None,
-                children: Vec::new(),
-                updates: update_view::Updates::default(),
-            };
+            ctx.set_theme(theme);
+            let mut app = sample_app();
+            app.action = action;
             let mut rectangles = Vec::new();
             for _ in 0..3 {
-                let output = ctx.run(
-                    egui::RawInput {
-                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-                        ..Default::default()
-                    },
-                    |ctx| app.main_view(ctx),
-                );
+                let output = render(&mut app, &ctx, size, vec![]);
                 rectangles.clear();
                 for shape in output.shapes {
                     if let egui::Shape::Rect(rect) = shape.shape {

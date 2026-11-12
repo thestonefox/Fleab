@@ -123,11 +123,20 @@ pub(super) fn card(ui: &egui::Ui) -> egui::Frame {
 }
 
 pub(super) fn primary(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+    primary_button(
+        ui,
+        egui::Button::new(label).min_size(egui::vec2(112.0, 36.0)),
+        enabled,
+    )
+}
+
+pub(super) fn primary_button(
+    ui: &mut egui::Ui,
+    button: egui::Button<'_>,
+    enabled: bool,
+) -> egui::Response {
     if !enabled {
-        return ui.add_enabled(
-            false,
-            egui::Button::new(label).min_size(egui::vec2(112.0, 36.0)),
-        );
+        return ui.add_enabled(false, button);
     }
     let dark = ui.visuals().dark_mode;
     ui.scope(|ui| {
@@ -151,10 +160,7 @@ pub(super) fn primary(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Re
             widget.bg_stroke = Stroke::NONE;
             widget.fg_stroke.color = color(if dark { 0x00334d } else { 0xffffff });
         }
-        ui.add_enabled(
-            enabled,
-            egui::Button::new(label).min_size(egui::vec2(112.0, 36.0)),
-        )
+        ui.add_enabled(enabled, button)
     })
     .inner
 }
