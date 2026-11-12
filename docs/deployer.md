@@ -77,6 +77,48 @@ requires a unique
 Unity player executable with its `_Data` directory or a valid `.app` bundle.
 macOS bundle validation uses `CFBundleExecutable`, including binary plists.
 
+## Background mode and game shortcuts
+
+Open **Settings > Application** and enable **Keep Fleab in the system tray**
+(**menu bar** on macOS). This is off by default. Choose whether minimising the
+window hides it and whether closing the window keeps Fleab running. Changes
+are saved immediately, independently of game profiles.
+See the Application settings in [light](screenshots/background-light.png) or
+[dark](screenshots/background-dark.png) mode.
+
+The icon's menu provides **Open Fleab**, a submenu for each configured game,
+**Settings**, and **Exit Fleab**. Games with multiple destinations have a target
+submenu so client/server and OS installations are explicit. Game actions are:
+
+* **Deploy latest** rescans the source and installs the newest archive for that
+  destination, ordered by the archive's build timestamp.
+* **Run installed** launches the installed copy without requiring the archive
+  source to be connected.
+* **Deploy and run latest** chooses the newest launch-compatible archive for
+  that destination, installs it, then launches it only after successful deployment.
+
+Background operations continue with the window hidden. The menu shows the last
+operation's status and disables conflicting game actions while busy or editing
+settings. New operation errors restore the app window. **Exit Fleab** exits
+instead of hiding; it cancels active deployment/download work and waits for safe
+completion. Closing to the tray leaves that work running. Updating Fleab still
+exits for the authenticated updater's restart.
+
+Windows uses its notification area and macOS uses a native menu bar status
+item. Linux uses StatusNotifierItem/D-Bus without requiring GTK/AppIndicator
+libraries. A registered tray host is required (KDE Plasma, including Steam Deck
+Desktop Mode, or an appropriate GNOME extension). Fleab keeps the window
+accessible when no host is available and restores it if that host disappears.
+
+Linux prefers X11/XWayland when `DISPLAY` is available: the current window
+framework cannot hide/unhide a native Wayland window. On a Wayland-only system,
+the menu can still be available, but hide/close-to-tray is disabled and the
+settings page explains the limitation. Steam Deck Gaming Mode does not provide
+this desktop tray workflow.
+
+Preferences are stored in `desktop.json` beside `profiles.json`. They survive
+app updates. Invalid settings are preserved and reported instead of overwritten.
+
 ## Storage
 
 Configuration schema 1 is JSON, saved atomically to:

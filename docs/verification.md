@@ -1,5 +1,46 @@
 # Verification record
 
+## Focus-independent publishing and background tray — 12 November 2026
+
+Automatic Unity publishing now starts its filesystem worker directly in the
+successful-build callback. Unity 6000.6.8f1 passed all 10 editor tests in an
+isolated hidden batch project, including real player builds. The regression
+blocks editor updates after the automatic build and requires the final archive
+to appear before updates resume. Interactive focus switching on the host was
+not used; progress/completion UI still depends on subsequent editor updates.
+
+The desktop now has opt-in background behaviour under Settings > Application,
+with independent minimise/close options, persisted in `desktop.json`. Native
+tray/menu-bar menus expose each configured profile/target and its deployment
+and launch actions. Ordinary checks passed: 50 Windows tests, 52 Linux tests on
+native WSL filesystems, formatting and strict Clippy on both platforms.
+
+Hidden Windows Sandbox exercised the actual release executable and native
+context menus, including:
+
+* Closing and minimising to tray without exiting, and restoring through Open.
+* Deploying the newest of two published archives while the window is hidden.
+* Deploying and launching a real Unity player while hidden.
+* Launching the installed player with the archive source disconnected.
+* Explicit Exit and normal window closing when the preference is disabled.
+* Portable GUI startup without installed Rust or .NET runtimes.
+
+The Windows x64 release also packaged successfully in an isolated output
+directory, including the new dependencies' notices and license files.
+
+The native test caught and verified fixes for Windows hidden-window repaint
+wakeups and replacing a menu while the user was interacting with it. Menu
+handles now remain stable across worker/status changes. Application settings
+were captured and inspected in light/dark hidden Sandbox views.
+
+Linux compiles and tests the GTK-free StatusNotifierItem backend. A live
+registered tray host is required; absent hosts retain normal window behaviour.
+Linux selects X11/XWayland when available because winit cannot hide/unhide native
+Wayland windows. Wayland-only sessions keep normal window closing and explain
+that limitation. Live Linux desktop/tray interaction, macOS menu-bar interaction
+and ARM64 runtimes still require their environments and the six-platform CI;
+they are not represented as locally tested here.
+
 ## Compact build controls and refresh selection — 12 November 2026
 
 Installation details now start collapsed and can be expanded by clicking the
