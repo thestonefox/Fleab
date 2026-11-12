@@ -3,7 +3,7 @@
 Install `com.fleab.publisher` in Unity Package Manager using this Git URL:
 
 ```text
-https://github.com/thestonefox/Fleab.git?path=/unity-package#v0.1.0
+https://github.com/thestonefox/Fleab.git?path=/unity-package#v0.5.0
 ```
 
 For a local checkout, use **Install package from disk** and select
