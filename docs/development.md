@@ -60,8 +60,9 @@ Windows builds; `-BuildTarget Linux64` or `macOS` checks cross-build publishing
 when those modules are installed. The ordinary editor run skips expensive builds.
 
 For a real native Unity archive, set `FLEAB_ACCEPTANCE_ARCHIVE` and run
-`cargo test --test acceptance -- --ignored`. It deploys to a disposable directory,
-starts the native player in batch mode, checks running-process protection and
+`cargo test --test acceptance -- --ignored`. It uses the combined deploy-and-launch
+action in a disposable directory, starts the native player in batch mode,
+checks running-process protection and
 terminates only its own test process. Use a test game, not an interactive build
 you are actively playing. The normal test suite leaves this test ignored.
 

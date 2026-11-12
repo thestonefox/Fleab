@@ -1,5 +1,35 @@
 # Verification record
 
+## Deploy and launch — 12 November 2026
+
+The desktop split button defaults to **Deploy and launch** and offers
+**Deploy only** and **Launch installed**. Menu selection changes the action
+without running it. The selection lasts for the app session.
+
+* Formatting and strict Clippy passed on Windows x64 and Linux x64 (WSL).
+* Rust suites passed: 45 tests on Windows and 47 on native Linux filesystems.
+  New checks cover deployment-before-launch ordering, failed deployments,
+  cancellation during commit, launch failure preserving the installation,
+  first-install preflight and Wine/Proton configuration.
+* UI checks passed for menu selection without execution, completion/error
+  messages surviving a rescan, and all action labels fitting 480×390 and
+  780×660 windows in light and dark themes.
+* Hidden Windows Sandbox passed unit/integration checks, portable GUI startup,
+  and the combined action with a real published Unity Windows player. It
+  installed and started the player in batch/no-graphics mode, then confirmed
+  running-process protection and terminated its own player.
+* The actual desktop views and open menus were captured and inspected in
+  hidden Sandbox in both themes. The screenshot harness uses production view
+  code with capture-only palette and popup overrides; it does not replace an
+  interaction test. No host desktop windows were opened.
+
+The refreshed [light](screenshots/fleab-light.png) and
+[dark](screenshots/fleab-dark.png) app captures and
+[light](screenshots/actions-light.png) and
+[dark](screenshots/actions-dark.png) action menus use a sample profile.
+Native macOS/Windows ARM64 and actual Wine/Proton game launches still require
+their respective runtime environments; no new remote CI run is claimed here.
+
 ## Unity publisher folder picker — 10 November 2026
 
 The released settings window allowed the folder icon's intrinsic texture size to

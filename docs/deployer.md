@@ -45,9 +45,26 @@ source on use. With no scanned selection, local installation records remain
 visible as status information.
 
 The selected archive determines the destination and installed-build display.
-Deploy installs the selected archive immediately. Launch uses the installed
-record for that target. Configured executable overrides are relative to the
-installation and must resolve inside it. Automatic detection requires a unique
+The primary split button defaults to **Deploy and launch**: it installs the
+selected archive, then starts that newly installed build with the profile's
+launch settings. Open the arrow to choose **Deploy only** or **Launch installed**.
+Choosing a menu item changes the button; click the button to run it. The choice
+lasts for the current app session. The refresh icon rescans the archive source.
+See the action menu in [light](screenshots/actions-light.png) or
+[dark](screenshots/actions-dark.png) mode.
+
+Launch never follows a failed or cancelled deployment. If cancellation arrives
+during the final replacement, the completed installation is kept and launch is
+skipped. If starting the game fails, the new installation remains available;
+correct the launch settings and retry **Launch installed** without redeploying.
+Unsupported platforms or missing Wine/Proton runners disable the combined
+action with an explanation; **Deploy only** remains available. A first-time
+installation can use the combined action without a previously installed build.
+
+**Launch installed** uses the installed record for the selected target,
+independently of the selected archive's version. Configured executable overrides
+are relative to the installation and must resolve inside it. Automatic detection
+requires a unique
 Unity player executable with its `_Data` directory or a valid `.app` bundle.
 macOS bundle validation uses `CFBundleExecutable`, including binary plists.
 
