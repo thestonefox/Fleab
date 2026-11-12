@@ -265,6 +265,7 @@ mod tests {
             editor: None,
             children: Vec::new(),
             updates: update_view::Updates::default(),
+            tray: tray::State::default(),
         }
     }
 
