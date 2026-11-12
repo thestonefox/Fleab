@@ -73,17 +73,30 @@ impl FleabApp {
                         }
                         ui.add_space(12.0);
                         ui.label("Published build");
-                        ui.add_enabled_ui(self.worker.is_none() && !self.updates.busy() && !self.builds.is_empty(), |ui| {
-                            egui::ComboBox::from_id_salt("build").width(ui.available_width()).truncate()
-                                .selected_text(self.builds.get(self.selected_build).map(build_label)
-                                    .unwrap_or_else(|| "No builds available".into()))
-                                .show_ui(ui, |ui| {
-                                    for (index, build) in self.builds.iter().enumerate() {
-                                        ui.selectable_value(&mut self.selected_build, index, build_label(build))
-                                            .on_hover_text(&build.filename);
-                                    }
-                                }).response.on_hover_text(self.builds.get(self.selected_build)
-                                    .map(|b| b.filename.as_str()).unwrap_or("Refresh to look for published builds"));
+                        ui.horizontal(|ui| {
+                            let width = (ui.available_width() - 36.0 - ui.spacing().item_spacing.x).max(100.0);
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(width, 36.0),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.add_enabled_ui(!busy && !self.builds.is_empty(), |ui| {
+                                        egui::ComboBox::from_id_salt("build").width(width).truncate()
+                                            .selected_text(self.builds.get(self.selected_build).map(build_label)
+                                                .unwrap_or_else(|| "No builds available".into()))
+                                            .show_ui(ui, |ui| {
+                                                for (index, build) in self.builds.iter().enumerate() {
+                                                    ui.selectable_value(&mut self.selected_build, index, build_label(build))
+                                                        .on_hover_text(&build.filename);
+                                                }
+                                            }).response.on_hover_text(self.builds.get(self.selected_build)
+                                                .map(|b| b.filename.as_str()).unwrap_or("Refresh to look for published builds"));
+                                    });
+                                },
+                            );
+                            if icons::button(ui, Icon::Refresh, "Refresh builds and select newest",
+                                !busy && self.profile().is_some() && !self.read_only).clicked() {
+                                self.refresh(ctx);
+                            }
                         });
                     });
                     ui.add_space(8.0);
@@ -91,34 +104,34 @@ impl FleabApp {
                     let state = target.and_then(|target| self.targets.get(&target));
                     design::card(ui).show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        ui.horizontal(|ui| {
-                            let (rect, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
-                            icons::paint(ui, Icon::Folder, rect.center(), 20.0, ui.visuals().weak_text_color());
-                            ui.label(RichText::new("Installation").size(16.0).strong());
-                        });
-                        ui.add_space(4.0);
-                        design::caption(ui, "Destination");
-                        let destination = self.profile().and_then(|p| target.and_then(|t| p.destination(t)));
-                        ui.add(egui::Label::new(destination.map(|p| p.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "Choose a build to see its destination".into())).wrap());
-                        ui.add_space(8.0);
-                        design::caption(ui, "Installed build");
-                        if let Some(record) = state.and_then(|s| s.installed.as_ref()) {
-                            let label = Build::parse(std::path::Path::new(&record.filename))
-                                .map(|build| build_label(&build)).unwrap_or_else(|_| record.filename.clone());
-                            ui.add(egui::Label::new(label).wrap()).on_hover_text(&record.filename);
-                        } else if target.is_none() {
-                            let mut any = false;
-                            for (target, state) in &self.targets {
-                                if let Some(record) = &state.installed {
-                                    let version = Build::parse(std::path::Path::new(&record.filename))
-                                        .map(|build| build.version).unwrap_or_else(|_| record.filename.clone());
-                                    ui.add(egui::Label::new(format!("{} · {}", target.label(), version)).wrap());
-                                    any = true;
-                                }
-                            }
-                            if !any { ui.label("Not installed"); }
-                        } else { ui.label("Not installed"); }
+                        egui::CollapsingHeader::new(RichText::new("Installation").size(16.0).strong())
+                            .id_salt(("installation", self.config.selected_profile, target.map(Target::label)))
+                            .default_open(false)
+                            .show(ui, |ui| {
+                                ui.add_space(4.0);
+                                design::caption(ui, "Destination");
+                                let destination = self.profile().and_then(|p| target.and_then(|t| p.destination(t)));
+                                ui.add(egui::Label::new(destination.map(|p| p.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| "Choose a build to see its destination".into())).wrap());
+                                ui.add_space(8.0);
+                                design::caption(ui, "Installed build");
+                                if let Some(record) = state.and_then(|s| s.installed.as_ref()) {
+                                    let label = Build::parse(std::path::Path::new(&record.filename))
+                                        .map(|build| build_label(&build)).unwrap_or_else(|_| record.filename.clone());
+                                    ui.add(egui::Label::new(label).wrap()).on_hover_text(&record.filename);
+                                } else if target.is_none() {
+                                    let mut any = false;
+                                    for (target, state) in &self.targets {
+                                        if let Some(record) = &state.installed {
+                                            let version = Build::parse(std::path::Path::new(&record.filename))
+                                                .map(|build| build.version).unwrap_or_else(|_| record.filename.clone());
+                                            ui.add(egui::Label::new(format!("{} · {}", target.label(), version)).wrap());
+                                            any = true;
+                                        }
+                                    }
+                                    if !any { ui.label("Not installed"); }
+                                } else { ui.label("Not installed"); }
+                            });
                         if let Some(error) = state.and_then(|s| s.error.as_ref()) {
                             ui.colored_label(ui.visuals().error_fg_color, error);
                         }
@@ -193,8 +206,6 @@ impl FleabApp {
                                 Action::LaunchInstalled => if let Some(target) = target { self.launch(ctx, target); },
                             }
                         }
-                        if icons::button(ui, Icon::Refresh, "Refresh builds", !busy && self.profile().is_some() && !self.read_only)
-                            .clicked() { self.refresh(ctx); }
                     });
                     if let Some(reason) = action_reason { design::caption(ui, &reason); }
                     if let Some(worker) = &self.worker && let Ok(progress) = worker.progress.lock() {
@@ -208,7 +219,9 @@ impl FleabApp {
                     ui.add_space(8.0);
                     if self.error { ui.colored_label(ui.visuals().error_fg_color, &self.status); }
                     else if !busy && self.status == "Ready" {
-                        design::caption(ui, &format!("{} published builds available", self.builds.len()));
+                        let count = self.builds.len();
+                        let noun = if count == 1 { "build" } else { "builds" };
+                        design::caption(ui, &format!("{count} published {noun} available"));
                     } else { design::caption(ui, &self.status); }
                     if self.read_only && let Some(path) = &self.config_path {
                         ui.small(format!("Configuration: {}", path.display()));
@@ -301,7 +314,15 @@ mod tests {
                     builds: if scan_fails {
                         Err("Source disconnected".into())
                     } else {
-                        Ok(app.builds.clone())
+                        let mut builds = app.builds.clone();
+                        builds.insert(
+                            0,
+                            Build::parse(std::path::Path::new(
+                                "Game_2.0_20261112-090000_Windows64.tar.zst",
+                            ))
+                            .unwrap(),
+                        );
+                        Ok(builds)
                     },
                     targets: BTreeMap::new(),
                     runners: vec![],
@@ -309,6 +330,7 @@ mod tests {
                         "Build deployed, but could not launch: access denied".into(),
                         true,
                     )),
+                    selection: BuildSelection::KeepCurrent,
                 }))
                 .unwrap();
             app.worker = Some(Worker {
@@ -328,7 +350,86 @@ mod tests {
                     .starts_with("Build deployed, but could not launch: access denied")
             );
             assert_eq!(app.status.contains("Source disconnected"), scan_fails);
+            assert_eq!(app.selected_build, usize::from(!scan_fails));
         }
+    }
+
+    #[test]
+    fn explicit_refresh_selects_newest_and_failed_refresh_preserves_selection() {
+        let ctx = egui::Context::default();
+        let mut app = sample_app();
+        let root = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
+        let source = root.path().join("archives");
+        fs::create_dir(&source).unwrap();
+        let old = source.join("Game_1.0_20261108-095828_Windows64.tar.zst");
+        let new = source.join("Game_2.0_20261112-090000_Windows64.tar.zst");
+        fs::write(&old, []).unwrap();
+        fs::write(&new, []).unwrap();
+        app.builds = vec![Build::parse(&old).unwrap()];
+        app.config.profiles[0].source = source.to_string_lossy().into_owned();
+        app.config.profiles[0].destinations.insert(
+            Target::WindowsClient,
+            root.path().join("installed").to_string_lossy().into_owned(),
+        );
+        let wait = |app: &mut FleabApp| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while app.worker.is_some() {
+                assert!(std::time::Instant::now() < deadline, "Refresh timed out");
+                app.poll(&ctx);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        };
+        app.refresh(&ctx);
+        wait(&mut app);
+        assert_eq!(app.builds.len(), 2);
+        assert_eq!(app.selected_build, 0);
+        assert_eq!(app.builds[0].path, new);
+
+        app.selected_build = 1;
+        app.config.profiles[0].source = root
+            .path()
+            .join("disconnected")
+            .to_string_lossy()
+            .into_owned();
+        app.refresh(&ctx);
+        wait(&mut app);
+        assert!(app.error);
+        assert_eq!(app.builds.len(), 2);
+        assert_eq!(app.selected_build, 1);
+        assert_eq!(app.builds[1].path, old);
+
+        let empty = root.path().join("empty");
+        fs::create_dir(&empty).unwrap();
+        app.config.profiles[0].source = empty.to_string_lossy().into_owned();
+        app.refresh(&ctx);
+        wait(&mut app);
+        assert!(!app.error);
+        assert!(app.builds.is_empty());
+        assert_eq!(app.selected_build, 0);
+    }
+
+    #[test]
+    fn installation_details_start_collapsed_and_can_be_expanded() {
+        let ctx = egui::Context::default();
+        design::install(&ctx);
+        ctx.style_mut(|style| style.animation_time = 0.0);
+        let mut app = sample_app();
+        let mut header = None;
+        for _ in 0..3 {
+            let output = render(&mut app, &ctx, egui::vec2(780.0, 660.0), vec![]);
+            assert!(!output.shapes.iter().any(|shape| matches!(&shape.shape,
+                egui::Shape::Text(text) if text.galley.text() == "Destination")));
+            header = output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == "Installation" => {
+                    Some(text.pos + text.galley.size() / 2.0)
+                }
+                _ => None,
+            });
+        }
+        click(&mut app, &ctx, header.expect("Installation header"));
+        let output = render(&mut app, &ctx, egui::vec2(780.0, 660.0), vec![]);
+        assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
+            egui::Shape::Text(text) if text.galley.text() == "Destination")));
     }
 
     #[test]
