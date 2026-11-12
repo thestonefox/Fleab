@@ -101,11 +101,14 @@ impl FleabApp {
         };
         let mut open = true;
         let mut action = None;
+        let compact = ctx.content_rect().height() < 420.0;
+        let narrow = ctx.content_rect().width() < 440.0;
+        let vertical_margin = if compact { 8 } else { 16 };
         egui::TopBottomPanel::top("settings-header")
             .frame(
                 egui::Frame::new()
                     .fill(ctx.style().visuals.panel_fill)
-                    .inner_margin(egui::Margin::symmetric(24, 16)),
+                    .inner_margin(egui::Margin::symmetric(24, vertical_margin)),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -117,26 +120,36 @@ impl FleabApp {
                     ui.add_space(4.0);
                     ui.heading("Settings");
                 });
-                ui.add_space(4.0);
-                design::caption(
-                    ui,
-                    "Manage profiles, launch options and application updates.",
-                );
+                if !compact {
+                    ui.add_space(4.0);
+                    design::caption(
+                        ui,
+                        "Manage profiles, launch options and application updates.",
+                    );
+                }
             });
         egui::TopBottomPanel::bottom("settings-actions")
             .frame(
                 egui::Frame::new()
                     .fill(ctx.style().visuals.panel_fill)
-                    .inner_margin(egui::Margin::symmetric(24, 16)),
+                    .inner_margin(egui::Margin::symmetric(24, vertical_margin)),
             )
             .show(ctx, |ui| {
                 if !editor.error.is_empty() {
                     egui::ScrollArea::vertical()
-                        .max_height(64.0)
+                        .max_height(if compact { 32.0 } else { 64.0 })
+                        .min_scrolled_height(0.0)
                         .show(ui, |ui| {
                             ui.colored_label(ui.visuals().error_fg_color, &editor.error);
                         });
                     ui.add_space(8.0);
+                }
+                if narrow
+                    && editor.existing
+                    && !matches!(editor.tab, Tab::Updates | Tab::Application)
+                    && ui.button("Delete profile").clicked()
+                {
+                    action = Some("delete");
                 }
                 ui.horizontal(|ui| {
                     if matches!(editor.tab, Tab::Updates | Tab::Application) {
@@ -151,6 +164,7 @@ impl FleabApp {
                         return;
                     }
                     if editor.existing
+                        && !narrow
                         && ui
                             .button("Delete profile")
                             .on_hover_text("Remove this profile; installed files are kept")
@@ -171,7 +185,7 @@ impl FleabApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::symmetric(24, 8)))
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().id_salt("settings-scroll").show(ui, |ui| {
+                layout::scroll(ui, "settings-scroll", |ui| {
                     ui.set_max_width(ui.available_width().min(860.0));
                     if !matches!(editor.tab, Tab::Updates | Tab::Application) { design::card(ui).show(ui, |ui| {
                         ui.set_width(ui.available_width());
@@ -181,8 +195,10 @@ impl FleabApp {
                                 for profile in &self.config.profiles {
                                     if ui.selectable_label(profile.id == editor.profile.id, &profile.name).clicked() {
                                         editor = Editor::new(profile.clone(), true);
+                                        ui.close();
                                     }
                                 }
+                                layout::list_navigation(ui);
                             });
                         ui.horizontal_wrapped(|ui| {
                             if ui.button("New profile").clicked() { action = Some("new"); }
@@ -193,18 +209,28 @@ impl FleabApp {
                     });
                     ui.add_space(8.0); }
                     ui.add_enabled_ui(!self.updates.busy(), |ui| { ui.horizontal_wrapped(|ui| {
-                        ui.selectable_value(&mut editor.tab, Tab::Folders, "Profile & folders");
-                        ui.selectable_value(&mut editor.tab, Tab::Launch, "Launch options");
-                        ui.selectable_value(&mut editor.tab, Tab::Updates, "Updates");
-                        ui.selectable_value(&mut editor.tab, Tab::Application, "Application");
+                        for (tab, label) in [(Tab::Folders, "Profile & folders"), (Tab::Launch, "Launch options"),
+                            (Tab::Updates, "Updates"), (Tab::Application, "Application")] {
+                            let response = ui.selectable_value(&mut editor.tab, tab, label);
+                            if editor.tab == tab { controller::anchor(ui.ctx(), &response); }
+                        }
                     }); });
                     ui.add_space(8.0);
+                    self.controller.hint(ui);
                     match editor.tab {
                         Tab::Application => {
                             design::card(ui).show(ui, |ui| {
                                 ui.set_width(ui.available_width());
                                 section(ui, "Background behaviour");
                                 self.tray.settings(ctx, ui, self.read_only);
+                            });
+                            ui.add_space(8.0);
+                            design::card(ui).show(ui, |ui| {
+                                section(ui, "Gamepad");
+                                design::caption(ui, if self.controller.connected { "Controller connected. Use the D-pad or left stick to navigate, A to select and B to go back. LB/RB moves focus between fields; the right stick scrolls." }
+                                    else { "Connect a controller or use your handheld's gamepad mode. Controller navigation is enabled automatically while Fleab is focused." });
+                                design::caption(ui, "Text entry uses your keyboard or system on-screen keyboard. System file pickers use the operating system's controls.");
+                                if let Some(error) = &self.controller.error { ui.colored_label(ui.visuals().error_fg_color, error); }
                             });
                         }
                         Tab::Updates => {
@@ -264,20 +290,23 @@ impl FleabApp {
                                         .selected_text(label).show_ui(ui, |ui| {
                                             if ui.selectable_label(editor.profile.launch.runner.is_empty(), "Automatic discovery").clicked() {
                                                 editor.profile.launch.runner.clear(); editor.profile.launch.runner_kind = RunnerKind::Auto;
+                                                ui.close();
                                             }
                                             for runner in &self.runners {
                                                 if ui.selectable_label(editor.profile.launch.runner == runner.path.to_string_lossy(), &runner.name).clicked() {
                                                     editor.profile.launch.runner = runner.path.to_string_lossy().into();
                                                     editor.profile.launch.runner_kind = runner.kind;
                                                     editor.profile.launch.steam_root = runner.steam_root.to_string_lossy().into();
+                                                    ui.close();
                                                 }
                                             }
+                                            layout::list_navigation(ui);
                                         });
                                     ui.label("Runner type");
                                     egui::ComboBox::from_id_salt("runner-kind").selected_text(format!("{:?}", editor.profile.launch.runner_kind))
                                         .show_ui(ui, |ui| { for kind in [RunnerKind::Auto, RunnerKind::Wine, RunnerKind::Proton] {
-                                            ui.selectable_value(&mut editor.profile.launch.runner_kind, kind, format!("{kind:?}"));
-                                        }});
+                                            if ui.selectable_value(&mut editor.profile.launch.runner_kind, kind, format!("{kind:?}")).clicked() { ui.close(); }
+                                        } layout::list_navigation(ui); });
                                     field(ui, "Runner executable", &mut editor.profile.launch.runner, "Optional Wine or Proton path");
                                     if ui.button("Choose executable…").clicked()
                                         && let Some(path) = rfd::FileDialog::new().pick_file() {
@@ -383,9 +412,15 @@ mod tests {
     }
     #[test]
     fn settings_save_stays_inside_small_windows() {
-        for (size, theme) in [egui::vec2(700.0, 490.0), egui::vec2(480.0, 390.0)]
-            .into_iter()
-            .flat_map(|size| [egui::Theme::Light, egui::Theme::Dark].map(|theme| (size, theme)))
+        for (size, theme) in [
+            egui::vec2(700.0, 490.0),
+            egui::vec2(480.0, 390.0),
+            egui::vec2(640.0, 300.0),
+            egui::vec2(480.0, 260.0),
+            egui::vec2(360.0, 240.0),
+        ]
+        .into_iter()
+        .flat_map(|size| [egui::Theme::Light, egui::Theme::Dark].map(|theme| (size, theme)))
         {
             let ctx = egui::Context::default();
             design::install(&ctx);
@@ -406,6 +441,8 @@ mod tests {
                 children: Vec::new(),
                 updates: update_view::Updates::default(),
                 tray: tray::State::default(),
+                controller: controller::State::default(),
+                activation: None,
             };
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
             // egui windows settle their auto-size on a second layout pass.
@@ -497,6 +534,8 @@ mod tests {
                 children: Vec::new(),
                 updates: update_view::Updates::default(),
                 tray: tray::State::default(),
+                controller: controller::State::default(),
+                activation: None,
             };
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(480.0, 390.0));
             let mut done = Vec::new();

@@ -6,6 +6,11 @@ fn main() -> eframe::Result {
         Ok(false) => (),
         Err(error) => return Err(eframe::Error::AppCreation(error.into())),
     }
+    let primary = match fleab::instance::claim() {
+        Ok(fleab::instance::Claim::Primary(primary)) => primary,
+        Ok(fleab::instance::Claim::Activated) => return Ok(()),
+        Err(error) => return Err(eframe::Error::AppCreation(error.into())),
+    };
     let title = format!("Fleab {}", env!("CARGO_PKG_VERSION"));
     let icon = image::load_from_memory(include_bytes!("../../assets/fleab.png"))
         .expect("Bundled application icon")
@@ -25,7 +30,8 @@ fn main() -> eframe::Result {
             .with_title(&title)
             .with_decorations(true)
             .with_inner_size([780.0, 660.0])
-            .with_min_inner_size([480.0, 390.0])
+            .with_min_inner_size([360.0, 240.0])
+            .with_clamp_size_to_monitor_size(true)
             .with_icon(eframe::egui::IconData {
                 rgba: icon.into_raw(),
                 width,
@@ -36,8 +42,8 @@ fn main() -> eframe::Result {
     eframe::run_native(
         &title,
         options,
-        Box::new(|cc| {
-            let mut app = fleab::app::FleabApp::new(&cc.egui_ctx);
+        Box::new(move |cc| {
+            let mut app = fleab::app::FleabApp::with_instance(&cc.egui_ctx, primary);
             app.attach_window(cc);
             Ok(Box::new(app))
         }),
