@@ -35,21 +35,30 @@ each OS/client-server target. A blank destination disables that target's builds
 in discovery. Architectures share destinations; no host-platform filter exists.
 
 Sources are scanned at startup, profile selection and Refresh. There is no
-watcher. All matching archives share one newest-first dropdown. Discovery
-ignores temporary filenames, malformed names, directories and symlink files.
+watcher. Refresh sits beside the Published build dropdown and selects the
+newest available archive after a successful scan. Rescans after deployment
+keep the selected archive. All matching archives share one newest-first
+dropdown. Discovery ignores temporary filenames, malformed names, directories
+and symlink files.
 A disconnected source reports an error without erasing profile settings or
-local installation records. Reconnect the share and Refresh.
+local installation records or the last selected archive. Reconnect the share
+and Refresh.
 If a share disconnects after discovery, the last scanned selection remains
 available for launching the installed build; deployment still validates the
 source on use. With no scanned selection, local installation records remain
-visible as status information.
+available in the Installation panel.
 
 The selected archive determines the destination and installed-build display.
+The **Installation** panel starts collapsed; click its header to see the
+destination and installed build. Its open state is remembered for each game
+and target during the app session. Installation errors remain visible when
+the details are collapsed.
+
 The primary split button defaults to **Deploy and launch**: it installs the
 selected archive, then starts that newly installed build with the profile's
 launch settings. Open the arrow to choose **Deploy only** or **Launch installed**.
 Choosing a menu item changes the button; click the button to run it. The choice
-lasts for the current app session. The refresh icon rescans the archive source.
+lasts for the current app session.
 See the action menu in [light](screenshots/actions-light.png) or
 [dark](screenshots/actions-dark.png) mode.
 

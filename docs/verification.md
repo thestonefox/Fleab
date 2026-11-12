@@ -1,5 +1,27 @@
 # Verification record
 
+## Compact build controls and refresh selection — 12 November 2026
+
+Installation details now start collapsed and can be expanded by clicking the
+header. The open state is kept per profile/target for the current app session;
+installation errors remain visible outside the collapsed body. Refresh is next
+to Published build and selects the newest archive after a successful scan.
+Post-deployment scans keep the selected archive. Failed scans preserve the
+previous dropdown and selection; successful empty scans clear both.
+
+* Windows suite: 47 tests passed; strict Clippy and formatting passed.
+* Linux x64 under WSL: strict Clippy and 49 tests passed on native filesystems.
+* Refresh checks use a directory containing old/new archive filenames, then an
+  unavailable source and an empty source. UI checks cover expanding the panel,
+  preserving post-deployment feedback/selection and small-window layouts.
+* Linux's wider font exposed the build dropdown consuming Refresh's reserved
+  space at 480×390. A constrained child layout fixed it; the light/dark layout
+  checks pass on both Windows and Linux.
+* The final main views and action menus were captured and inspected in light
+  and dark themes in hidden Windows Sandbox. The capture harness uses the
+  production UI with capture-only palette/popup overrides. The host desktop
+  remained free. Screenshot files used by the README have been refreshed.
+
 ## Deploy and launch — 12 November 2026
 
 The desktop split button defaults to **Deploy and launch** and offers
