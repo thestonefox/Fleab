@@ -30,9 +30,10 @@ content; the OS draws the native title bar separately.
 The initial window shrinks to fit small displays, including 720p handhelds at
 common Windows scaling settings. Its minimum content size is 360×240 logical
 pixels. Settings use a compact header/footer on short windows; Save/Cancel stay
-visible while the form scrolls. Solid scrollbars, mouse-wheel scrolling and
-dragging the content provide access to lower sections. Keyboard/controller
-focus also scrolls lower controls into view.
+visible while the form scrolls. Solid scrollbars appear only when content
+overflows. Mouse-wheel scrolling and dragging the content provide access to
+lower sections. Keyboard/controller focus also scrolls lower controls into
+view.
 
 Controller navigation is enabled automatically while Fleab is focused. Windows
 uses Xbox-compatible XInput controllers; Linux/macOS use the controller mappings

@@ -9,7 +9,7 @@ pub(super) fn scroll(
         .id_salt(id)
         .auto_shrink([false, false])
         .min_scrolled_height(0.0)
-        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
         .scroll_source(egui::scroll_area::ScrollSource::ALL)
         .show(ui, |ui| {
             add(ui);
