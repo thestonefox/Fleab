@@ -45,7 +45,7 @@ For background game shortcuts, enable **Settings > Application > Keep Fleab in
 the system tray** (menu bar on macOS). Minimise and close behaviour are optional.
 
 The Unity Git URL above follows `main`. Update the package in Unity Package
-Manager to receive publisher fixes. An existing URL pinned to `#v0.1.0` keeps
+Manager to receive publisher fixes. An existing URL pinned to `#v0.8.1` keeps
 that old publisher until its Git reference is changed; updating the desktop app
 does not update the Unity package. Use a release tag when you want a fixed version.
 

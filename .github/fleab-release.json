@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "version": "v0.8.1",
+  "previous_version": "v0.8.0",
+  "bump": "patch",
+  "pr_number": 9,
+  "merge_sha": "64a423c2dd5d825cdc43af170b0838f826f71466"
+}
